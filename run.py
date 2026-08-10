@@ -65,7 +65,7 @@ def _setup_logging():
         import datetime as _dt
         stamp = _dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         logf.write("\n" + "=" * 60 + "\n")
-        logf.write(f"  bracky's PoGO private server  --  session started {stamp}\n")
+        logf.write(f"  ChucnyServer PoGO private server  --  session started {stamp}\n")
         logf.write("=" * 60 + "\n")
     except Exception:
         pass
@@ -94,6 +94,46 @@ def _setup_logging():
     sys.stdout = _Tee(sys.__stdout__, logf)
     sys.stderr = _Tee(sys.__stderr__, logf)
 
+
+def _render_ui_loading():
+    """Renders a clean animation by writing safely via a UTF-8 encoded system stream."""
+    stages = [
+        "",
+        "Doing something...",
+        "Waiting...",
+        "Loading..."
+    ]
+    
+    # Force system terminal writer to use safe UTF-8 bytes to prevent Latin-1 crashes
+    try:
+        writer = sys.__stdout__.buffer
+        is_buffer = True
+    except AttributeError:
+        writer = sys.__stdout__
+        is_buffer = False
+
+    def send_to_terminal(text):
+        if is_buffer:
+            writer.write(text.encode('utf-8', errors='replace'))
+        else:
+            writer.write(text)
+        sys.__stdout__.flush()
+
+    send_to_terminal("\n\033[1;34m[*] Booting ChucnyServer...\033[0m\n")
+    time.sleep(0.1)
+    
+    for stage in stages:
+        for percent in [20, 40, 60, 80, 100]:
+            filled = percent // 5
+            empty = 20 - filled
+            # Tabby-safe block layout rendering
+            bar = "█" * filled + "░" * empty
+            send_to_terminal(f"\r\033[K  [{bar}] {percent}%\033[0m | {stage}...")
+            time.sleep(0.06)
+        send_to_terminal("\n")
+    
+    send_to_terminal("\n\033[1;32m[+] All sub-modules loaded successfully!\033[0m\n\n")
+    time.sleep(0.1)
 
 def main():
     _setup_logging()
@@ -131,18 +171,31 @@ def main():
     except Exception as e:
         admin_url = f"(failed to start: {e})"
 
-    print("=" * 60)
-    print("  PoGO private server  --  built by bracky")
-    print("  a Pokemon GO 0.29 (July 2016) server, made from scratch")
-    print("-" * 60)
-    print(f"  World Manager (this PC):          {admin_url}")
-    print(f"  Point the phone's Wi-Fi DNS at:   {redirect_ip}")
-    print(f"  Game server : https://{redirect_ip}:{os.environ['PORT']}")
-    print(f"  DNS redirect: udp {redirect_ip}:{os.environ['DNS_PORT']}")
-    print("  (Ctrl-C to stop)")
-    print("=" * 60)
-    print("  bracky's PoGO server -- everything below is live server activity")
-    print()
+    # Display the visual loading sequence bypassing logging capture
+    _render_ui_loading()
+
+    # Sizing strings cleanly before adding raw color blocks
+    raw_title   = "  [x] ChucnyServer -- Pokemon GO 0.29.0 Server"
+    raw_desc    = "      A Pokemon GO 0.29 (July 2016) server, made from scratch"
+    raw_admin   = f"      -> Local Admin Control : {admin_url}"
+    raw_dns     = f"      -> Target Wi-Fi DNS    : {redirect_ip}"
+    raw_game    = f"      -> SSL Game Interface  : https://{redirect_ip}:{os.environ['PORT']}"
+    raw_traffic = f"      -> Overriding Traffic  : udp {redirect_ip}:{os.environ['DNS_PORT']}"
+    raw_warn    = "  [!] Press [Ctrl+C] at any time to safely halt server tasks"
+
+    # Tabby-safe layout output array
+    print("\033[1;34m+" + "-" * 72 + "+")
+    print(f"\033[1;36m{raw_title.ljust(72)}\033[1;34m|")
+    print(f"\033[0;37m{raw_desc.ljust(72)}\033[1;34m|")
+    print("+" + "-" * 72 + "+")
+    print(f"\033[1;32m{raw_admin.ljust(72)}\033[1;34m|")
+    print(f"\033[1;32m{raw_dns.ljust(72)}\033[1;34m|")
+    print(f"\033[1;32m{raw_game.ljust(72)}\033[1;34m|")
+    print(f"\033[1;32m{raw_traffic.ljust(72)}\033[1;34m|")
+    print("\033[1;34m|                                                                        |")
+    print(f"\033[1;33m{raw_warn.ljust(72)}\033[1;34m|")
+    print("+" + "-" * 72 + "+\033[0m")
+    print("\033[1;32m[📡] [ChucnyServer Live Stream]: Routing network mutations below...\033[0m\n")
 
     # DNS in a supervised background thread (auto-restarts if it ever dies)
     def dns_loop():
@@ -158,7 +211,7 @@ def main():
     try:
         server.main()
     except KeyboardInterrupt:
-        print("\nshutting down.")
+        print("\n\033[1;31m[!] ChucnyServer stopped. Clean exit achieved.\033[0m")
 
 
 if __name__ == "__main__":
