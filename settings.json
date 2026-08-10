@@ -1,0 +1,111 @@
+{
+  "_readme": [
+    "==================== POKEMON GO SERVER SETTINGS ====================",
+    "Edit the numbers below, save the file, and they apply within a few",
+    "seconds. You do NOT need to restart the server.",
+    "",
+    "To reset everything: delete this file. It will be recreated.",
+    "",
+    "catching:",
+    "   xp_per_catch ......... XP for catching anything at all",
+    "   xp_nice_throw ........ bonus XP for a Nice throw",
+    "   xp_great_throw ....... bonus XP for a Great throw",
+    "   xp_excellent_throw ... bonus XP for an Excellent throw",
+    "   xp_curveball ......... small extra bonus for a curveball",
+    "",
+    "pokestops:",
+    "   xp_per_spin .......... XP each time you spin a stop",
+    "   cooldown_minutes ..... how long a stop stays purple before reuse",
+    "   min/max_items_per_spin  how many items a spin gives",
+    "",
+    "gyms:",
+    "   team ................. your team: 1=Blue, 2=Red, 3=Yellow",
+    "   defender_minutes ..... how long a Pokemon guards before coming home",
+    "   defender_coins ....... PokeCoins paid when it returns",
+    "   max_defenders ........ how many Pokemon fit in one gym",
+    "",
+    "spawns:",
+    "   refresh_minutes ...... how often all wild Pokemon change",
+    "   how_many_near_you .... wild Pokemon around you (0-60)",
+    "   nearest/farthest_distance_m   how spread out they are, in metres",
+    "   min_cp / max_cp ...... how strong wild Pokemon are",
+    "   allow_legendaries .... true = Mewtwo etc. can appear in the wild",
+    "",
+    "pokemon:  (powering up, evolving, transferring)",
+    "   powerup_candy / powerup_stardust   cost of one power-up",
+    "   powerup_cp_gain ...... % CP added per power-up",
+    "   evolve_xp ............ XP for evolving one Pokemon",
+    "   transfer_candy ....... candy you get for transferring",
+    "   faint_after_gym ...... true = gym defenders come home with 0 HP",
+    "",
+    "battles:  (attacking a Gym)",
+    "   attack_damage ........ damage your normal tap does",
+    "   special_damage ....... damage your charged move does",
+    "   defender_damage ...... damage the gym Pokemon does back to you",
+    "   win_xp ............... XP for taking down a whole Gym",
+    "",
+    "storage:  (bought from the World Manager with gym PokeCoins)",
+    "   pokemon_upgrade_step/cost  space added per purchase, and its price",
+    "   items_upgrade_step/cost    same for the item bag",
+    "   max_pokemon_limit / max_items_limit   the ceiling you can buy up to",
+    "",
+    "server:",
+    "   world_manager_port ... the http://127.0.0.1:PORT control panel",
+    "===================================================================="
+  ],
+  "catching": {
+    "xp_per_catch": 100,
+    "candy_per_catch": 3,
+    "stardust_per_catch": 100,
+    "xp_nice_throw": 500,
+    "xp_great_throw": 1000,
+    "xp_excellent_throw": 2000,
+    "xp_curveball": 10
+  },
+  "pokestops": {
+    "xp_per_spin": 50,
+    "cooldown_minutes": 5,
+    "min_items_per_spin": 2,
+    "max_items_per_spin": 5
+  },
+  "gyms": {
+    "team": 1,
+    "defender_minutes": 15,
+    "defender_coins": 20,
+    "max_defenders": 6
+  },
+  "spawns": {
+    "refresh_minutes": 15,
+    "how_many_near_you": 5,
+    "nearest_distance_m": 25,
+    "farthest_distance_m": 65,
+    "min_cp": 100,
+    "max_cp": 1200,
+    "allow_legendaries": false
+  },
+  "pokemon": {
+    "powerup_candy": 1,
+    "powerup_stardust": 200,
+    "powerup_cp_gain": 12,
+    "evolve_xp": 500,
+    "transfer_candy": 1,
+    "faint_after_gym": true
+  },
+  "battles": {
+    "attack_damage": 12,
+    "special_damage": 30,
+    "defender_damage": 8,
+    "win_xp": 1000
+  },
+  "storage": {
+    "pokemon_upgrade_step": 50,
+    "pokemon_upgrade_cost": 200,
+    "max_pokemon_limit": 1000,
+    "items_upgrade_step": 50,
+    "items_upgrade_cost": 200,
+    "max_items_limit": 1000
+  },
+  "server": {
+    "world_manager_port": 8080
+  }
+}
