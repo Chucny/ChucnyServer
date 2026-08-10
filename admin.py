@@ -17,11 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import events as EV
 import places as PL
 
-# Items you can hand yourself from the Shop panel (id -> label). These are the
-# ones the 2016 client actually knows how to display in the bag.
-# NOTE: 301 is the Lucky Egg and 501 is the Lure Module (Troy Disk). This list
-# previously had 501 labelled "Lucky Egg" and 602 labelled "Lure Module" -- 602 is
-# actually X Attack, so both of those handed out the wrong item.
+# Items you can hand yourself from the Shop panel (id -> label).
 GIVEABLE = [(1, "Poke Ball"), (2, "Great Ball"), (3, "Ultra Ball"),
             (101, "Potion"), (102, "Super Potion"), (103, "Hyper Potion"),
             (104, "Max Potion"), (201, "Revive"), (202, "Max Revive"),
@@ -29,9 +25,6 @@ GIVEABLE = [(1, "Poke Ball"), (2, "Great Ball"), (3, "Ultra Ball"),
             (501, "Lure Module"), (902, "Egg Incubator")]
 
 # The shop, at the real 2016 PokeCoin prices. (sku, label, item_id, count, price)
-# The in-game shop screen cannot work -- it prices everything through Google Play
-# and our APK isn't a registered Play product -- so this is where you spend the
-# coins your Gym defenders earn.
 SHOP = [
     ("pokeball.20",   "20 x Poke Ball",     1,  20,  100),
     ("pokeball.100",  "100 x Poke Ball",    1, 100,  460),
@@ -68,153 +61,395 @@ Snorlax Articuno Zapdos Moltres Dratini Dragonair Dragonite Mewtwo Mew""".split(
 
 PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>PoGO World Manager</title>
+<title>ChucnyServer World Manager</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
- *{box-sizing:border-box}
- body{margin:0;background:#22262b;color:#e9edf2;font-family:ui-monospace,Consolas,monospace}
- header{text-align:center;padding:18px 12px 10px}
- h1{margin:0;font-size:34px;letter-spacing:.06em;font-weight:800}
- .pill{display:inline-block;margin-top:10px;border:1px solid #3d4650;border-radius:6px;padding:7px 16px;color:#57d977;font-size:13px}
- .meta{margin-top:10px;font-size:12px;color:#9aa5b1;line-height:1.9}
- h2{text-align:center;font-size:20px;margin:16px 0 10px;font-weight:600}
- .bar{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;padding:0 12px 14px}
- .bar button,.bar select,.bar input{background:#2b3138;border:1px solid #3d4650;color:#e9edf2;
-   border-radius:6px;padding:9px 14px;font:inherit;font-size:13px;cursor:pointer}
- .bar button.on{background:#2b6cf6;border-color:#2b6cf6;color:#fff}
- .bar button.danger{color:#ff9a9a}
- #map{height:52vh;min-height:320px;width:100%;background:#111}
- .hint{text-align:center;font-size:12px;color:#9aa5b1;padding:8px 12px}
- .list{max-width:900px;margin:0 auto 30px;padding:0 12px}
- .row{display:flex;align-items:center;gap:10px;background:#2b3138;border:1px solid #363d45;
-   border-radius:6px;padding:8px 12px;margin-bottom:6px;font-size:13px}
- .row .t{flex:1;color:#c6d0da}
- .row .x{color:#ff9a9a;cursor:pointer;padding:2px 8px}
- .tag{border-radius:4px;padding:2px 7px;font-size:11px}
- .stop{background:#1d4e89}.gym{background:#8a2f3d}.mon{background:#1f6b45}
- .empty{color:#8892a0;text-align:center;padding:14px;font-size:13px}
+ :root {
+   --bg: #f4f6f9;
+   --card: #ffffff;
+   --text: #1e293b;
+   --text-muted: #64748b;
+   --border: #e2e8f0;
+   --primary: #2563eb;
+   --primary-hover: #1d4ed8;
+   --danger: #ef4444;
+   --danger-hover: #dc2626;
+   --success: #10b981;
+   --warning: #f59e0b;
+   --radius: 12px;
+   --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+ }
+
+ * { box-sizing: border-box; }
+ body {
+   margin: 0;
+   background: var(--bg);
+   color: var(--text);
+   font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+   line-height: 1.5;
+   padding-bottom: 40px;
+ }
+
+ header {
+   background: var(--card);
+   border-bottom: 1px solid var(--border);
+   padding: 20px 24px;
+   display: flex;
+   justify-content: space-between;
+   align-items: center;
+   box-shadow: var(--shadow);
+ }
+
+ .brand-title {
+   margin: 0;
+   font-size: 24px;
+   font-weight: 700;
+   background: linear-gradient(135deg, #2563eb, #3b82f6);
+   -webkit-background-clip: text;
+   -webkit-text-fill-color: transparent;
+ }
+
+ .status-badge {
+   display: inline-flex;
+   align-items: center;
+   gap: 6px;
+   background: #ecfdf5;
+   color: #047857;
+   font-weight: 600;
+   border-radius: 20px;
+   padding: 4px 12px;
+   font-size: 12px;
+   border: 1px solid #a7f3d0;
+ }
+
+ .status-dot {
+   width: 8px;
+   height: 8px;
+   background: var(--success);
+   border-radius: 50%;
+   display: inline-block;
+ }
+
+ .container {
+   max-width: 1200px;
+   margin: 24px auto;
+   padding: 0 16px;
+   display: grid;
+   grid-template-columns: 1fr;
+   gap: 20px;
+ }
+
+ .card {
+   background: var(--card);
+   border: 1px solid var(--border);
+   border-radius: var(--radius);
+   padding: 20px;
+   box-shadow: var(--shadow);
+ }
+
+ .card-title {
+   font-size: 18px;
+   font-weight: 600;
+   margin: 0 0 16px 0;
+   color: var(--text);
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+ }
+
+ .grid-2 {
+   display: grid;
+   grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+   gap: 20px;
+ }
+
+ .controls-row {
+   display: flex;
+   gap: 10px;
+   flex-wrap: wrap;
+   align-items: center;
+ }
+
+ button, select, input {
+   background: var(--card);
+   border: 1px solid var(--border);
+   color: var(--text);
+   border-radius: 8px;
+   padding: 8px 14px;
+   font: inherit;
+   font-size: 14px;
+   outline: none;
+   transition: all 0.15s ease-in-out;
+ }
+
+ button {
+   font-weight: 500;
+   cursor: pointer;
+ }
+
+ button:hover {
+   border-color: #cbd5e1;
+   background: #f8fafc;
+ }
+
+ button.btn-primary {
+   background: var(--primary);
+   color: white;
+   border-color: var(--primary);
+ }
+
+ button.btn-primary:hover {
+   background: var(--primary-hover);
+   border-color: var(--primary-hover);
+ }
+
+ button.btn-danger {
+   background: #fef2f2;
+   color: var(--danger);
+   border-color: #fecaca;
+ }
+
+ button.btn-danger:hover {
+   background: var(--danger);
+   color: white;
+ }
+
+ button.on {
+   background: #eff6ff;
+   color: var(--primary);
+   border-color: #bfdbfe;
+   font-weight: 600;
+ }
+
+ input[type="text"], input[type="number"], select {
+   background: #f8fafc;
+ }
+
+ input[type="text"]:focus, input[type="number"]:focus, select:focus {
+   border-color: var(--primary);
+   background: #fff;
+ }
+
+ #map {
+   height: 480px;
+   width: 100%;
+   border-radius: var(--radius);
+   border: 1px solid var(--border);
+   box-shadow: var(--shadow);
+ }
+
+ .hint {
+   font-size: 13px;
+   color: var(--text-muted);
+   margin-top: 8px;
+ }
+
+ .list {
+   max-height: 250px;
+   overflow-y: auto;
+   display: flex;
+   flex-direction: column;
+   gap: 8px;
+ }
+
+ .row {
+   display: flex;
+   align-items: center;
+   justify-content: space-between;
+   background: #f8fafc;
+   border: 1px solid var(--border);
+   border-radius: 8px;
+   padding: 10px 14px;
+   font-size: 13px;
+ }
+
+ .row .t { color: var(--text); font-weight: 500; }
+ .row .x { color: var(--danger); cursor: pointer; font-weight: 600; padding: 2px 6px; }
+ .row .x:hover { text-decoration: underline; }
+
+ .tag {
+   border-radius: 6px;
+   padding: 3px 8px;
+   font-size: 11px;
+   font-weight: 600;
+   text-transform: uppercase;
+   letter-spacing: 0.05em;
+ }
+ .stop { background: #e0f2fe; color: #0369a1; }
+ .gym { background: #ffe4e6; color: #be123c; }
+ .mon { background: #dcfce7; color: #15803d; }
+
+ .empty {
+   color: var(--text-muted);
+   text-align: center;
+   padding: 20px;
+   font-size: 14px;
+ }
+
+ .alert-warning {
+   background: #fffbeb;
+   border: 1px solid #fde68a;
+   color: #b45309;
+   border-radius: var(--radius);
+   padding: 14px 18px;
+   font-size: 14px;
+   margin-bottom: 20px;
+ }
+
+ .stats-bar {
+   display: flex;
+   gap: 24px;
+   font-size: 14px;
+   color: var(--text-muted);
+ }
+
+ .stats-bar strong {
+   color: var(--text);
+ }
 </style></head><body>
+
 <header>
-  <h1>POGOSERVER</h1>
-  <div class="pill" id="status">RUNNING</div>
-  <div class="meta">
-    PLACED OBJECTS: <b id="cnt">0</b><br>
-    <span id="counts"></span><br>
-    SPAWN MODE: <b id="mode">-</b>
+  <div>
+    <h1 class="brand-title">ChucnyServer</h1>
+    <div class="hint" style="margin:2px 0 0">World &amp; Event Management Portal</div>
+  </div>
+  <div style="text-align: right;">
+    <div class="status-badge"><span class="status-dot"></span> <span id="status">RUNNING</span></div>
   </div>
 </header>
 
-<div id="warn" style="display:none;max-width:760px;margin:0 auto 14px;padding:10px 14px;
-  background:#3a2f14;border:1px solid #7a6320;border-radius:8px;color:#ffd98a;font-size:13px">
-  <b>No Gyms in your world.</b> Random stops/gyms are OFF, so the only ones that exist are the
-  ones you place. Choose <b>Gym</b> below and click the map (or use Build ring) &mdash; then you
-  can tap it in game and station a Pokemon there.
-</div>
-<h2>World Manager</h2>
-<div class="bar">
-  <button id="b-stop" class="on" onclick="setMode('stop')">PokeStop</button>
-  <button id="b-gym" onclick="setMode('gym')">Gym</button>
-  <button id="b-mon" onclick="setMode('mon')">Pokemon</button>
-  <select id="species"></select>
-  <input id="pname" placeholder="Name (optional)" size="14">
-  <input id="pimg" placeholder="Photo: file in photos/ or URL" size="20">
-  <button onclick="togProc('forts')" id="b-pf">Random stops/gyms: OFF</button>
-  <button onclick="togProc('spawns')" id="b-ps">Random Pokemon: ON</button>
-  <button class="danger" onclick="clearAll()">Clear all</button>
-</div>
-<div id="map"></div>
-<div class="hint">Click the map to place the selected object. Click a marker to remove it.
-Changes apply live &mdash; walk around in game and they'll appear.</div>
+<div class="container">
 
-<h2>Quick Build</h2>
-<div class="bar">
-  <span style="align-self:center;font-size:13px;color:#9aa5b1">Ring of stops around trainer:</span>
-  <input id="ring-n" type="number" value="8" min="1" max="24" size="3" title="how many stops">
-  <input id="ring-r" type="number" value="60" min="10" max="500" size="4" title="radius in metres">
-  <button onclick="ring()">Build ring</button>
-</div>
+  <div id="warn" class="alert-warning" style="display:none;">
+    <strong>No Gyms in your world.</strong> Random stops/gyms are OFF. Select <strong>Gym</strong> below and click on the map to add one.
+  </div>
 
-<h2>Shop</h2>
-<div class="bar">
-  <span style="align-self:center;font-size:13px;color:#9aa5b1">PokeCoins: <b id="coins" style="color:#ffd34d">0</b></span>
-  <button onclick="buy('pokemon')" id="b-buypk">Pokemon storage</button>
-  <button onclick="buy('items')" id="b-buyit">Item bag</button>
-</div>
-<div class="hint" id="shophint">Earn PokeCoins by leaving Pokemon to defend a Gym.
-Upgrades apply in game straight away.</div>
-<div class="bar" id="shopitems"></div>
-<div class="hint" id="buyhint">The in-game shop screen prices everything through
-Google Play, which a re-signed APK can't reach &mdash; so buy here instead. Items land
-in your bag within a few seconds.</div>
-<h2>Raid</h2>
-<div class="bar">
-  <button onclick="raidToggle()" id="b-raid">Raid: off</button>
-  <select id="raid-mon"></select>
-  <label style="align-self:center;font-size:12px;color:#9aa5b1">CP
-    <input id="raid-cp" type="number" value="3000" min="10" max="9999" size="5"></label>
-  <input id="raid-name" value="raid" size="8" title="trainer name shown at the gym">
-  <button onclick="raidSave()">Apply</button>
-</div>
-<div class="hint" id="raidhint">Puts one boss in EVERY gym, replacing whatever is
-defending (real defenders are sent home first, nothing is lost). Beat it and it drops
-at your feet as a wild Pokemon you can catch — you have 10 minutes.</div>
+  <div class="card">
+    <div class="card-title">
+      <span>Interactive World Map</span>
+      <div class="stats-bar">
+        <span>Placed Objects: <strong id="cnt">0</strong></span>
+        <span>Details: <strong id="counts">0 stops</strong></span>
+      </div>
+    </div>
 
-<h2>Nominations</h2>
-<div class="hint">Added by players from the in-game Help Center
-(Settings &rarr; support). These go straight into the world &mdash; one per player
-per day. Remove one here if it shouldn't be there.</div>
-<div class="list" id="noms"><div class="empty">No nominations waiting.</div></div>
+    <div class="controls-row" style="margin-bottom: 14px;">
+      <button id="b-stop" class="on" onclick="setMode('stop')">PokeStop</button>
+      <button id="b-gym" onclick="setMode('gym')">Gym</button>
+      <button id="b-mon" onclick="setMode('mon')">Pokemon</button>
+      <select id="species"></select>
+      <input id="pname" placeholder="Name (optional)" size="14">
+      <input id="pimg" placeholder="Photo path/URL" size="18">
+      <button onclick="togProc('forts')" id="b-pf">Random Stops: OFF</button>
+      <button onclick="togProc('spawns')" id="b-ps">Random Pokemon: ON</button>
+      <button class="btn-danger" onclick="clearAll()">Clear All</button>
+    </div>
 
-<h2>Give to a player</h2>
-<div class="bar">
-  <span style="align-self:center;font-size:13px;color:#9aa5b1">Trainer</span>
-  <input id="giveuser" list="accounts" placeholder="username" size="14"
-         title="Leave blank for the trainer currently playing">
-  <datalist id="accounts"></datalist>
-  <span class="hint" style="align-self:center">Blank = whoever is playing now</span>
-</div>
-<div class="bar">
-  <select id="giveitem"></select>
-  <input id="giveqty" type="number" value="20" min="1" max="999" size="4">
-  <button onclick="give()">Add items</button>
-</div>
-<div class="bar">
-  <select id="givecandy"></select>
-  <input id="givecandyqty" type="number" value="25" min="1" max="999" size="4">
-  <button onclick="giveCandy()">Add candy</button>
-</div>
-<div class="bar">
-  <input id="givedust" type="number" value="1000" min="1" max="999999" size="7">
-  <button onclick="giveDust()">Add stardust</button>
-</div>
-<div class="bar">
-  <input id="newpw" placeholder="New password" size="14">
-  <button onclick="resetPw()">Reset password</button>
-</div>
-<div class="hint" id="givehint">Candy goes to the whole evolution family, so Charmander
-candy also powers up Charmeleon and Charizard. Everything shows up in game within a
-few seconds.</div>
+    <div id="map"></div>
+    <div class="hint">Click anywhere on the map to place the selected element. Click existing markers to remove them.</div>
+  </div>
 
-<h2>Events</h2>
-<div class="bar" id="presets"></div>
-<div class="bar">
-  <input id="ev-name" placeholder="Event name" size="14">
-  <label style="align-self:center;font-size:12px;color:#9aa5b1">Density
-    <input id="ev-density" type="number" min="0" max="60" size="3"></label>
-  <select id="ev-mode">
-    <option value="all">All 151</option><option value="list">From list</option>
-    <option value="single">One species</option>
-  </select>
-  <input id="ev-list" placeholder="1,4,7,25" size="12" title="species list">
-  <label style="align-self:center;font-size:12px;color:#9aa5b1">CP
-    <input id="ev-min" type="number" min="10" max="5000" size="4"> &ndash;
-    <input id="ev-max" type="number" min="10" max="5000" size="4"></label>
-  <button onclick="saveEv()">Apply event</button>
-</div>
-<div class="hint">Density = wild Pokemon around you (0&ndash;60). "One species" + a
-Pokemon makes a themed event, e.g. a Pikachu festival.</div>
+  <div class="grid-2">
 
-<div class="list" id="list"></div>
+    <div class="card">
+      <div class="card-title">Quick Build Ring</div>
+      <div class="controls-row">
+        <input id="ring-n" type="number" value="8" min="1" max="24" style="width: 70px" title="Stops count">
+        <input id="ring-r" type="number" value="60" min="10" max="500" style="width: 80px" title="Radius meters">
+        <button class="btn-primary" onclick="ring()">Build Ring Around Trainer</button>
+      </div>
+      <div class="hint">Creates a neat circle of stops (and a gym) at your trainer's position.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Raid Boss Management</div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <button onclick="raidToggle()" id="b-raid">Raid: OFF</button>
+        <select id="raid-mon"></select>
+        <input id="raid-cp" type="number" value="3000" min="10" max="9999" style="width: 80px" placeholder="CP">
+        <input id="raid-name" value="raid" size="8" title="Trainer name">
+        <button class="btn-primary" onclick="raidSave()">Apply</button>
+      </div>
+      <div class="hint" id="raidhint">Spawns a raid boss defending every gym across the server.</div>
+    </div>
+
+  </div>
+
+  <div class="grid-2">
+
+    <div class="card">
+      <div class="card-title">Shop &amp; Storage Upgrades</div>
+      <div class="controls-row" style="margin-bottom: 12px;">
+        <span>PokeCoins: <strong id="coins" style="color:var(--warning)">0</strong></span>
+        <button onclick="buy('pokemon')" id="b-buypk">Pokemon Storage</button>
+        <button onclick="buy('items')" id="b-buyit">Item Bag</button>
+      </div>
+      <div class="controls-row" id="shopitems" style="margin-bottom: 8px;"></div>
+      <div class="hint" id="shophint">Buy items using PokeCoins earned by defending Gyms.</div>
+      <div class="hint" id="buyhint"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Player Rewards &amp; Password Reset</div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <input id="giveuser" list="accounts" placeholder="Trainer Username (Blank = Active)" style="flex:1;">
+        <datalist id="accounts"></datalist>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <select id="giveitem" style="flex:1;"></select>
+        <input id="giveqty" type="number" value="20" min="1" max="999" style="width: 70px;">
+        <button class="btn-primary" onclick="give()">Give Items</button>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <select id="givecandy" style="flex:1;"></select>
+        <input id="givecandyqty" type="number" value="25" min="1" max="999" style="width: 70px;">
+        <button class="btn-primary" onclick="giveCandy()">Give Candy</button>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <input id="givedust" type="number" value="1000" min="1" max="999999" style="width: 100px;">
+        <button class="btn-primary" onclick="giveDust()">Give Stardust</button>
+        <input id="newpw" placeholder="New Password" style="width: 130px;">
+        <button onclick="resetPw()">Reset PW</button>
+      </div>
+      <div class="hint" id="givehint"></div>
+    </div>
+
+  </div>
+
+  <div class="card">
+    <div class="card-title">Event &amp; Global Spawn Controls</div>
+    <div class="controls-row" id="presets" style="margin-bottom: 12px;"></div>
+    <div class="controls-row">
+      <input id="ev-name" placeholder="Event Name" size="12">
+      <label style="font-size:13px; color:var(--text-muted)">Density: <input id="ev-density" type="number" min="0" max="60" style="width: 60px"></label>
+      <select id="ev-mode">
+        <option value="all">All 151</option>
+        <option value="list">From List</option>
+        <option value="single">Single Species</option>
+      </select>
+      <input id="ev-list" placeholder="1,4,7,25" size="10">
+      <label style="font-size:13px; color:var(--text-muted)">CP Range: 
+        <input id="ev-min" type="number" min="10" max="5000" style="width: 70px"> - 
+        <input id="ev-max" type="number" min="10" max="5000" style="width: 70px">
+      </label>
+      <button class="btn-primary" onclick="saveEv()">Apply Event Config</button>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Player Nominations</div>
+      <div class="list" id="noms"><div class="empty">No nominations waiting.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Placed Objects List</div>
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
@@ -225,12 +460,12 @@ const DEX=__DEX__;
 function setMode(m){mode=m;['stop','gym','mon'].forEach(k=>$('b-'+k).className=(k===m?'on':''));}
 function icon(color,txt){return L.divIcon({className:'',html:
  `<div style="background:${color};border:2px solid #fff;border-radius:50%;width:26px;height:26px;
-   display:flex;align-items:center;justify-content:center;font:700 11px monospace;color:#fff;
-   box-shadow:0 1px 4px rgba(0,0,0,.5)">${txt}</div>`, iconSize:[26,26], iconAnchor:[13,13]});}
+   display:flex;align-items:center;justify-content:center;font:700 11px sans-serif;color:#fff;
+   box-shadow:0 2px 5px rgba(0,0,0,0.2)">${txt}</div>`, iconSize:[26,26], iconAnchor:[13,13]});}
 
 let player={lat:0,lng:0};
 async function ring(){
-  if(!player.lat){alert('No trainer position yet - open the game first, or click the map to place manually.');return;}
+  if(!player.lat){alert('No trainer position available - open the game first or click the map.');return;}
   await post('/api/ring',{lat:player.lat,lng:player.lng,count:+$('ring-n').value,
     radius_m:+$('ring-r').value,gym:true});
   load();
@@ -247,7 +482,7 @@ function paintShop(coins){
   const box=$('shopitems'); box.innerHTML='';
   (SHOP).forEach(([sku,label,iid,cnt,price])=>{
     const b=document.createElement('button');
-    b.textContent = label + '  —  ' + price + 'c';
+    b.textContent = label + ' (' + price + 'c)';
     b.disabled = coins < price;
     b.style.opacity = coins < price ? 0.45 : 1;
     b.onclick = ()=>buyItem(sku);
@@ -257,12 +492,12 @@ function paintShop(coins){
 async function buyItem(sku){
   const r = await post('/api/buyitem', {sku: sku, player: $('giveuser').value});
   $('buyhint').textContent = (r.ok?'✓ ':'✗ ') + r.message;
-  $('buyhint').style.color = r.ok ? '#7fd1a6' : '#ff9a9a';
+  $('buyhint').style.color = r.ok ? 'var(--success)' : 'var(--danger)';
   load();
 }
 function raidPaint(r){
-  $('b-raid').textContent = 'Raid: ' + (r.on ? 'ON' : 'off');
-  $('b-raid').style.background = r.on ? '#8a2b2b' : '';
+  $('b-raid').textContent = 'Raid: ' + (r.on ? 'ON' : 'OFF');
+  $('b-raid').className = r.on ? 'btn-danger' : '';
   if(r.pokemon_id) $('raid-mon').value = r.pokemon_id;
   if(r.cp) $('raid-cp').value = r.cp;
   if(r.trainer) $('raid-name').value = r.trainer;
@@ -281,29 +516,28 @@ async function loadNoms(){
   const r = await post('/api/noms', {});
   const box = $('noms');
   if (!r.rows || !r.rows.length){
-    box.innerHTML = '<div class="empty">Nothing added yet.</div>'; return;
+    box.innerHTML = '<div class="empty">No nominations waiting.</div>'; return;
   }
   box.innerHTML = '';
   r.rows.forEach(function(n){
     const d = document.createElement('div'); d.className='row';
-    d.innerHTML = '<span class="tag ' + (n.kind==='gym'?'gym':'stop') + '">'
-      + (n.kind==='gym'?'GYM':'STOP') + '</span>'
-      + '<span class="t"><b>' + n.name + '</b> &mdash; ' + n.lat.toFixed(5) + ', '
-      + n.lng.toFixed(5) + '<br><small style="color:#8892a0">by ' + n.player
-      + (n.note ? ' &middot; ' + n.note : '') + '</small></span>';
+    d.innerHTML = '<div><span class="tag ' + (n.kind==='gym'?'gym':'stop') + '">'
+      + (n.kind==='gym'?'GYM':'STOP') + '</span> '
+      + '<b>' + n.name + '</b> &mdash; <small style="color:var(--text-muted)">by ' + n.player
+      + (n.note ? ' &middot; ' + n.note : '') + '</small></div>';
     const no = document.createElement('span');
-    no.className='x'; no.textContent='remove';
+    no.className='x'; no.textContent='Remove';
     no.onclick = function(){ resolveNom(n.id,'rejected'); };
     d.appendChild(no); box.appendChild(d);
   });
 }
 async function resolveNom(id, status){
-  const r = await post('/api/noms/resolve', {id: id, status: status});
+  await post('/api/noms/resolve', {id: id, status: status});
   loadNoms(); load();
 }
 function giveResult(r){
-  $('givehint').textContent = (r.ok?'\u2713 ':'\u2717 ') + r.message;
-  $('givehint').style.color = r.ok ? '#7fd1a6' : '#ff9a9a';
+  $('givehint').textContent = (r.ok?'✓ ':'✗ ') + r.message;
+  $('givehint').style.color = r.ok ? 'var(--success)' : 'var(--danger)';
   load();
 }
 async function give(){
@@ -316,7 +550,7 @@ async function giveCandy(){
 }
 async function resetPw(){
   const who = $('giveuser').value.trim();
-  if(!who) return giveResult({ok:false, message:'Type which trainer first'});
+  if(!who) return giveResult({ok:false, message:'Select a trainer first'});
   giveResult(await post('/api/setpw', {player: who, password: $('newpw').value}));
   $('newpw').value='';
 }
@@ -326,8 +560,8 @@ async function giveDust(){
 }
 async function buy(kind){
   const r=await post('/api/buy',{what:kind});
-  $('shophint').textContent = (r.ok?'\u2713 ':'\u2717 ') + r.message;
-  $('shophint').style.color = r.ok ? '#7fd1a6' : '#ff9a9a';
+  $('shophint').textContent = (r.ok?'✓ ':'✗ ') + r.message;
+  $('shophint').style.color = r.ok ? 'var(--success)' : 'var(--danger)';
   load();
 }
 
@@ -337,16 +571,13 @@ async function load(){
   const ngym=data.forts.filter(f=>f.kind==='gym').length;
   const nstop=data.forts.length-ngym;
   $('warn').style.display=(ngym===0&&!data.procedural_forts)?'block':'none';
-  $('counts').textContent=nstop+' PokeStops / '+ngym+' Gyms / '+data.spawns.length+' spawn points';
+  $('counts').textContent=nstop+' Stops / '+ngym+' Gyms / '+data.spawns.length+' Spawns';
   const st=j.storage||{};
   $('coins').textContent=st.coins||0;
   paintShop(st.coins||0);
-  $('b-buypk').textContent='Pokemon storage: '+(st.pokemon_used||0)+'/'+(st.max_pokemon||0)
-    +'  (+'+(j.prices?j.prices.pokemon_step:0)+' for '+(j.prices?j.prices.pokemon_cost:0)+')';
-  $('b-buyit').textContent='Item bag: '+(st.items_used||0)+'/'+(st.max_items||0)
-    +'  (+'+(j.prices?j.prices.items_step:0)+' for '+(j.prices?j.prices.items_cost:0)+')';
-  $('mode').textContent=j.config.event_name+' / density '+j.config.spawn_density;
-  $('b-pf').textContent='Random stops/gyms: '+(data.procedural_forts?'ON':'OFF');
+  $('b-buypk').textContent='Pokemon storage: '+(st.pokemon_used||0)+'/'+(st.max_pokemon||0);
+  $('b-buyit').textContent='Item bag: '+(st.items_used||0)+'/'+(st.max_items||0);
+  $('b-pf').textContent='Random Stops: '+(data.procedural_forts?'ON':'OFF');
   $('b-ps').textContent='Random Pokemon: '+(data.procedural_spawns?'ON':'OFF');
   $('b-pf').className=data.procedural_forts?'on':'';
   $('b-ps').className=data.procedural_spawns?'on':'';
@@ -365,16 +596,16 @@ async function load(){
       attribution:'&copy; OpenStreetMap'}).addTo(map);
     layer=L.layerGroup().addTo(map);
     map.on('click',e=>place(e.latlng.lat,e.latlng.lng));
-    if(j.player.lat) L.circleMarker([j.player.lat,j.player.lng],{radius:7,color:'#ffd34d',
-      fillColor:'#ffd34d',fillOpacity:1}).addTo(map).bindTooltip('Trainer');
+    if(j.player.lat) L.circleMarker([j.player.lat,j.player.lng],{radius:7,color:'#2563eb',
+      fillColor:'#3b82f6',fillOpacity:1}).addTo(map).bindTooltip('Trainer Position');
   }
   draw();
 }
 function draw(){
   layer.clearLayers();
-  data.forts.forEach(f=>L.marker([f.lat,f.lng],{icon:icon(f.kind==='gym'?'#c0392b':'#2b6cf6',
+  data.forts.forEach(f=>L.marker([f.lat,f.lng],{icon:icon(f.kind==='gym'?'#ef4444':'#2563eb',
     f.kind==='gym'?'G':'S')}).addTo(layer).bindTooltip(f.name).on('click',()=>del(f.id)));
-  data.spawns.forEach(s=>L.marker([s.lat,s.lng],{icon:icon(s.pokemon_id?'#1f9d55':'#7a5cc4',s.pokemon_id?String(s.pokemon_id):'?')})
+  data.spawns.forEach(s=>L.marker([s.lat,s.lng],{icon:icon(s.pokemon_id?'#10b981':'#8b5cf6',s.pokemon_id?String(s.pokemon_id):'?')})
     .addTo(layer).bindTooltip(s.pokemon_id?(DEX[s.pokemon_id]||('#'+s.pokemon_id)):'Random').on('click',()=>del(s.id)));
   const rows=[...data.forts.map(f=>({id:f.id,cls:f.kind==='gym'?'gym':'stop',
       tag:f.kind==='gym'?'GYM':'STOP',
@@ -382,8 +613,8 @@ function draw(){
     ...data.spawns.map(s=>({id:s.id,cls:'mon',tag:s.pokemon_id?'MON':'RANDOM',
       t:`${s.pokemon_id?(DEX[s.pokemon_id]||('#'+s.pokemon_id)):'Random Pokemon'} — ${s.lat.toFixed(5)}, ${s.lng.toFixed(5)}`}))];
   $('list').innerHTML = rows.length ? rows.map(r=>
-    `<div class="row"><span class="tag ${r.cls}">${r.tag}</span><span class="t">${r.t}</span>
-     <span class="x" onclick="del('${r.id}')">remove</span></div>`).join('')
+    `<div class="row"><div><span class="tag ${r.cls}">${r.tag}</span> <span class="t">${r.t}</span></div>
+     <span class="x" onclick="del('${r.id}')">Remove</span></div>`).join('')
     : '<div class="empty">Nothing placed yet — click the map above.</div>';
 }
 async function post(u,b){return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},
@@ -487,9 +718,6 @@ class _Handler(BaseHTTPRequestHandler):
                 import contextlib as _ctx
                 who = (d.get("player") or "").strip()
                 kind = d.get("kind", "item")
-                # Blank means "whoever is playing right now", which keeps the old
-                # one-click behaviour. A name is validated against existing saves
-                # so a typo can't quietly create an empty account.
                 try:
                     ctx = world.acting_as(who) if who else _ctx.nullcontext()
                 except KeyError:
@@ -539,8 +767,6 @@ class _Handler(BaseHTTPRequestHandler):
                 row = helpcenter.resolve(d.get("id", ""), d.get("status", "rejected"))
                 if not row:
                     return self._json({"ok": False, "message": "unknown nomination"})
-                # Places are added straight away now, so "resolve" only ever
-                # means taking one back out again.
                 for f in list(PL.get()["forts"]):
                     if (abs(f["lat"] - row["lat"]) < 1e-6
                             and abs(f["lng"] - row["lng"]) < 1e-6):
@@ -565,8 +791,6 @@ class _Handler(BaseHTTPRequestHandler):
                 if not entry:
                     return self._json({"ok": False, "message": "unknown item"})
                 _sku, label, iid, cnt, price = entry
-                # acting_as is a context manager: a bad username raises on
-                # __enter__, i.e. at the `with`, not where it's constructed.
                 try:
                     ctx = world.acting_as(who) if who else _ctx.nullcontext()
                     ctx.__enter__()
@@ -592,7 +816,7 @@ class _Handler(BaseHTTPRequestHandler):
                     ctx.__exit__(None, None, None)
             if p == "/api/raid":
                 import world
-                if not d:                      # plain read
+                if not d:
                     return self._json(world.raid())
                 cfg, sent = world.set_raid(d.get("on"), d.get("pokemon_id"),
                                            d.get("cp"), d.get("trainer"))
@@ -619,8 +843,6 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(m if m else {"error": "unknown preset"},
                                   200 if m else 400)
             if p == "/api/ring":
-                # furnish a whole neighbourhood in one click: a ring of PokeStops
-                # (plus an optional Gym) around a centre point
                 import math
                 lat = float(d.get("lat", 0.0)); lng = float(d.get("lng", 0.0))
                 n = max(1, min(24, int(d.get("count", 8))))
