@@ -21,6 +21,7 @@ import socket
 import sys
 import threading
 import time
+sys.stdout.reconfigure(encoding='utf-8')
 
 # ---- resource base (works when frozen by PyInstaller too) -------------------
 if getattr(sys, "frozen", False):
@@ -98,10 +99,9 @@ def _setup_logging():
 def _render_ui_loading():
     """Renders a clean animation by writing safely via a UTF-8 encoded system stream."""
     stages = [
-        "",
-        "Doing something...",
-        "Waiting...",
-        "Loading..."
+        
+        "Doing something..."
+        
     ]
     
     # Force system terminal writer to use safe UTF-8 bytes to prevent Latin-1 crashes
@@ -123,17 +123,27 @@ def _render_ui_loading():
     time.sleep(0.1)
     
     for stage in stages:
-        for percent in [20, 40, 60, 80, 100]:
-            filled = percent // 5
-            empty = 20 - filled
+        for percent in [20, 21, 22, 23, 24, 30, 35, 38, 40, 60, 80, 100]:
+            filled = percent // 2
+            empty = 50 - filled
             # Tabby-safe block layout rendering
             bar = "█" * filled + "░" * empty
             send_to_terminal(f"\r\033[K  [{bar}] {percent}%\033[0m | {stage}...")
             time.sleep(0.06)
         send_to_terminal("\n")
     
-    send_to_terminal("\n\033[1;32m[+] All sub-modules loaded successfully!\033[0m\n\n")
+    send_to_terminal("\n\033[1;32m[+] Ready!\033[0m\n\n")
     time.sleep(0.1)
+time.sleep(0.6)
+print("""
+ ▗▄▄▖▗▖ ▗▖▗▖ ▗▖ ▗▄▄▖▗▖  ▗▖▗▖  ▗▖▗▄▄▖▗▄▄▄▖▗▄▄▖ ▗▖  ▗▖▗▄▄▄▖▗▄▄▖ 
+▐▌   ▐▌ ▐▌▐▌ ▐▌▐▌   ▐▛▚▖▐▌ ▝▚▞▘▐▌   ▐▌   ▐▌ ▐▌▐▌  ▐▌▐▌   ▐▌ ▐▌
+▐▌   ▐▛▀▜▌▐▌ ▐▌▐▌   ▐▌ ▝▜▌  ▐▌  ▝▀▚▖▐▛▀▀▘▐▛▀▚▖▐▌  ▐▌▐▛▀▀▘▐▛▀▚▖
+▝▚▄▄▖▐▌ ▐▌▝▚▄▞▘▝▚▄▄▖▐▌  ▐▌  ▐▌ ▗▄▄▞▘▐▙▄▄▖▐▌ ▐▌ ▝▚▞▘ ▐▙▄▄▖▐▌ ▐▌
+                                                              
+                                                              
+""");
+time.sleep(1.8)
 
 def main():
     _setup_logging()
@@ -195,7 +205,8 @@ def main():
     print("\033[1;34m|                                                                        |")
     print(f"\033[1;33m{raw_warn.ljust(72)}\033[1;34m|")
     print("+" + "-" * 72 + "+\033[0m")
-    print("\033[1;32m[📡] [ChucnyServer Live Stream]: Routing network mutations below...\033[0m\n")
+    print("\033[1;32m[📡] [ChucnyServer Live Stream]: Routing networking...\033[0m\n")
+
 
     # DNS in a supervised background thread (auto-restarts if it ever dies)
     def dns_loop():
