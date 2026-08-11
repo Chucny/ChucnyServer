@@ -60,26 +60,26 @@
     "xp_nice_throw": 500,
     "xp_great_throw": 1000,
     "xp_excellent_throw": 2000,
-    "xp_curveball": 10
+    "xp_curveball": 50
   },
   "pokestops": {
     "xp_per_spin": 50,
     "cooldown_minutes": 5,
     "min_items_per_spin": 2,
-    "max_items_per_spin": 5
+    "max_items_per_spin": 8
   },
   "gyms": {
     "team": 1,
     "defender_minutes": 15,
     "defender_coins": 20,
-    "max_defenders": 6
+    "max_defenders": 10
   },
   "spawns": {
     "refresh_minutes": 15,
     "how_many_near_you": 5,
     "nearest_distance_m": 25,
     "farthest_distance_m": 65,
-    "min_cp": 100,
+    "min_cp": 42,
     "max_cp": 1200,
     "allow_legendaries": false
   },
