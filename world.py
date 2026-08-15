@@ -18,14 +18,17 @@ import hmac
 import json
 import math
 import os
+import random as _random
+import sys as _sys
 import threading
 import time
 
-import random as _random
-import sys as _sys
-
 import settings as _cfg
 
+
+# ==============================================================================
+# Path & Directory Configuration
+# ==============================================================================
 
 def _data_dir():
     """Where user-editable/save files live: next to the .exe when frozen (so they
@@ -39,28 +42,49 @@ HERE = _data_dir()
 SAVE_FILE = os.path.join(HERE, "save.json")       # legacy single-player save
 SAVES_DIR = os.path.join(HERE, "saves")           # one file per account
 GYMS_FILE = os.path.join(HERE, "gyms.json")       # SHARED between accounts
+RAID_FILE = os.path.join(HERE, "raid.json")
+
+
+# ==============================================================================
+# Threading & Global Synchronization
+# ==============================================================================
 
 _lock = threading.RLock()
 _current = threading.local()
 _players = {}                                     # username -> Player
 
-# --- items -------------------------------------------------------------------
+
+# ==============================================================================
+# Constants & Level Tables
+# ==============================================================================
+
 ITEM_POKE_BALL = 1
 ITEM_GREAT_BALL = 2
 ITEM_POTION = 101
 ITEM_REVIVE = 201
 ITEM_RAZZ_BERRY = 701
 
-_STARTING_BAG = {ITEM_POKE_BALL: 50, ITEM_GREAT_BALL: 20,
-                 ITEM_POTION: 20, ITEM_REVIVE: 10, ITEM_RAZZ_BERRY: 20}
+_STARTING_BAG = {
+    ITEM_POKE_BALL: 50,
+    ITEM_GREAT_BALL: 20,
+    ITEM_POTION: 20,
+    ITEM_REVIVE: 10,
+    ITEM_RAZZ_BERRY: 20,
+}
 
 # Real 2016 XP thresholds (PlayerLevelSettings.required_experience).
-LEVEL_XP = [0, 1000, 3000, 6000, 10000, 15000, 21000, 28000, 36000, 45000,
-            55000, 65000, 75000, 85000, 100000, 120000, 140000, 160000, 185000,
-            210000, 260000, 335000, 435000, 560000, 710000, 900000, 1100000,
-            1350000, 1650000, 2000000, 2500000, 3000000, 3750000, 4750000,
-            6000000, 7500000, 9500000, 12000000, 15000000, 20000000]
+LEVEL_XP = [
+    0, 1000, 3000, 6000, 10000, 15000, 21000, 28000, 36000, 45000,
+    55000, 65000, 75000, 85000, 100000, 120000, 140000, 160000, 185000,
+    210000, 260000, 335000, 435000, 560000, 710000, 900000, 1100000,
+    1350000, 1650000, 2000000, 2500000, 3000000, 3750000, 4750000,
+    6000000, 7500000, 9500000, 12000000, 15000000, 20000000
+]
 
+
+# ==============================================================================
+# General Helpers
+# ==============================================================================
 
 def level_for_xp(xp):
     lvl = 1
@@ -80,146 +104,6 @@ def level_bounds(xp):
 def _safe_name(username):
     keep = "".join(c for c in (username or "player") if c.isalnum() or c in "-_")
     return (keep or "player")[:32].lower()
-
-
-# ================================================================== the player
-class Player:
-    def __init__(self, username):
-        self.username = username
-        self.file = os.path.join(SAVES_DIR, _safe_name(username) + ".json")
-        self.BAG = dict(_STARTING_BAG)
-        self.CAUGHT = []
-        self.CANDY = {}
-        self.STARDUST = 5000
-        self.XP = 0
-        self.LEVEL = 1
-        self.COINS = 0
-        self.MAX_POKEMON = 250
-        self.MAX_ITEMS = 350
-        self.CLAIMED_LEVELS = []
-        # uid -> ms it was removed. A GET_INVENTORY delta is ADDITIVE, so simply
-        # dropping a Pokemon from CAUGHT does not delete it on the client -- the
-        # client predicts the deletion locally and ROLLS IT BACK when the server
-        # never confirms, which is why transferred Pokemon reappeared. We have to
-        # keep reporting them as deleted for a while.
-        self.DELETED = {}
-        # pokemon_id -> [times_encountered, times_captured]. Without this the
-        # Pokedex screen is simply empty, however much you catch.
-        self.POKEDEX = {}
-        # Eggs live apart from CAUGHT so nothing else (battles, transfers, the
-        # box count) has to learn what an egg is. Each is
-        # {uid, target_km, start_km, incubator}.
-        self.EGGS = []
-        # One unlimited incubator, exactly like the real game gave you.
-        self.INCUBATORS = [{"id": "incubator-unlimited", "item": 901,
-                            "uses": -1, "egg": 0, "start_km": 0.0,
-                            "target_km": 0.0}]
-        self.HATCHED = []        # hatched, not yet reported to the client
-        self.LAST_POS = None     # (lat, lng) for the walked-distance tally
-        self.TEAM = 0            # 0 = not chosen yet; set in game at level 5
-        self.BERRIES = {}        # encounter_id -> capture multiplier in effect
-        self.PW = ""             # "salt$hash"; empty until the account is claimed
-        self.APPLIED = []        # active Lucky Egg / Incense: {item, applied_ms, expires_ms}
-        self.STATS = {"pokemons_encountered": 0, "pokemons_captured": 0,
-                      "poke_stop_visits": 0, "pokeballs_thrown": 0,
-                      "unique_pokedex_entries": 0, "km_walked": 0.0}
-
-    def snapshot(self):
-        return {"username": self.username,
-                "bag": {str(k): v for k, v in self.BAG.items()},
-                "caught": self.CAUGHT,
-                "candy": {str(k): v for k, v in self.CANDY.items()},
-                "stardust": self.STARDUST, "xp": self.XP, "level": self.LEVEL,
-                "coins": self.COINS, "stats": self.STATS,
-                "claimed_levels": self.CLAIMED_LEVELS,
-                "deleted": {str(k): v for k, v in self.DELETED.items()},
-                "pokedex": {str(k): list(v) for k, v in self.POKEDEX.items()},
-                "team": self.TEAM, "pw": self.PW, "applied": self.APPLIED,
-                "eggs": self.EGGS, "incubators": self.INCUBATORS,
-                "hatched": self.HATCHED,
-                "max_pokemon": self.MAX_POKEMON, "max_items": self.MAX_ITEMS}
-
-    def save(self):
-        try:
-            os.makedirs(SAVES_DIR, exist_ok=True)
-            tmp = self.file + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as fh:
-                json.dump(self.snapshot(), fh, indent=1)
-            os.replace(tmp, self.file)     # atomic; never a half-written save
-        except OSError:
-            pass                           # a failed save must never break play
-
-    def load_from(self, path):
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                d = json.load(fh)
-        except (OSError, ValueError):
-            return False
-        self.BAG = {}
-        for k, v in (d.get("bag") or {}).items():
-            try:
-                self.BAG[int(k)] = int(v)
-            except (TypeError, ValueError):
-                pass
-        if not self.BAG:
-            self.BAG = dict(_STARTING_BAG)
-        self.CAUGHT = [c for c in (d.get("caught") or []) if isinstance(c, dict)]
-        # Repair saves written while ids came from the spawn point: several
-        # Pokemon could share one uid, and the client (which keys by uid) then
-        # showed only one of them. Give the collisions fresh ids.
-        seen = set()
-        for c in self.CAUGHT:
-            u = int(c.get("uid", 0) or 0)
-            if not u or u in seen:
-                u = _fresh_uid(seen)
-                c["uid"] = u
-            seen.add(u)
-        self.CANDY = {}
-        for k, v in (d.get("candy") or {}).items():
-            try:
-                self.CANDY[int(k)] = int(v)
-            except (TypeError, ValueError):
-                pass
-        self.DELETED = {}
-        for k, v in (d.get("deleted") or {}).items():
-            try:
-                self.DELETED[int(k)] = int(v)
-            except (TypeError, ValueError):
-                pass
-        self.POKEDEX = {}
-        for k, v in (d.get("pokedex") or {}).items():
-            try:
-                self.POKEDEX[int(k)] = [int(v[0]), int(v[1])]
-            except (TypeError, ValueError, IndexError):
-                pass
-        # Backfill from the collection so an existing save doesn't show an empty
-        # Pokedex for Pokemon that were caught before it was recorded.
-        for c in self.CAUGHT:
-            pid = int(c.get("pokemon_id", 0) or 0)
-            if pid and pid not in self.POKEDEX:
-                self.POKEDEX[pid] = [1, 1]
-        self.TEAM = int(d.get("team", 0) or 0)
-        self.PW = str(d.get("pw", "") or "")
-        self.APPLIED = [a for a in (d.get("applied") or []) if isinstance(a, dict)]
-        self.EGGS = [e for e in (d.get("eggs") or []) if isinstance(e, dict)]
-        inc = [i for i in (d.get("incubators") or []) if isinstance(i, dict)]
-        if inc:
-            self.INCUBATORS = inc
-        self.HATCHED = [h for h in (d.get("hatched") or []) if isinstance(h, dict)]
-        self.STARDUST = int(d.get("stardust", self.STARDUST) or self.STARDUST)
-        self.XP = int(d.get("xp", 0) or 0)
-        self.COINS = int(d.get("coins", 0) or 0)
-        self.MAX_POKEMON = int(d.get("max_pokemon", 250) or 250)
-        self.MAX_ITEMS = int(d.get("max_items", 350) or 350)
-        for k, v in (d.get("stats") or {}).items():
-            if k in self.STATS:
-                self.STATS[k] = v
-        self.CLAIMED_LEVELS = [int(x) for x in (d.get("claimed_levels") or [])
-                               if str(x).lstrip("-").isdigit()]
-        self.LEVEL = level_for_xp(self.XP)
-        if not self.CLAIMED_LEVELS:      # pre-existing save: don't replay old popups
-            self.CLAIMED_LEVELS = list(range(1, self.LEVEL + 1))
-        return True
 
 
 _uid_rng = _random.Random()
@@ -249,6 +133,184 @@ def new_uid(seed=0):
         return base if base and base not in used else _fresh_uid(used)
 
 
+def _hash_pw(password, salt=None):
+    """PBKDF2 -- passwords are never stored in the clear, not even on a server
+    that only your family can reach."""
+    salt = salt or os.urandom(8).hex()
+    h = hashlib.pbkdf2_hmac(
+        "sha256", (password or "").encode("utf-8"), salt.encode("ascii"), 60000
+    ).hex()
+    return f"{salt}${h}"
+
+
+# ==============================================================================
+# Player Entity Model
+# ==============================================================================
+
+class Player:
+    def __init__(self, username):
+        self.username = username
+        self.file = os.path.join(SAVES_DIR, _safe_name(username) + ".json")
+        self.BAG = dict(_STARTING_BAG)
+        self.CAUGHT = []
+        self.CANDY = {}
+        self.STARDUST = 5000
+        self.XP = 0
+        self.LEVEL = 1
+        self.COINS = 0
+        self.MAX_POKEMON = 250
+        self.MAX_ITEMS = 350
+        self.CLAIMED_LEVELS = []
+        # uid -> ms it was removed.
+        self.DELETED = {}
+        # pokemon_id -> [times_encountered, times_captured].
+        self.POKEDEX = {}
+        # Eggs live apart from CAUGHT.
+        self.EGGS = []
+        # One unlimited incubator.
+        self.INCUBATORS = [
+            {
+                "id": "incubator-unlimited",
+                "item": 901,
+                "uses": -1,
+                "egg": 0,
+                "start_km": 0.0,
+                "target_km": 0.0,
+            }
+        ]
+        self.HATCHED = []        # hatched, not yet reported to the client
+        self.LAST_POS = None     # (lat, lng) for the walked-distance tally
+        self.TEAM = 0            # 0 = not chosen yet; set in game at level 5
+        self.BERRIES = {}        # encounter_id -> capture multiplier in effect
+        self.PW = ""             # "salt$hash"; empty until the account is claimed
+        self.APPLIED = []        # active Lucky Egg / Incense
+        self.STATS = {
+            "pokemons_encountered": 0,
+            "pokemons_captured": 0,
+            "poke_stop_visits": 0,
+            "pokeballs_thrown": 0,
+            "unique_pokedex_entries": 0,
+            "km_walked": 0.0,
+        }
+
+    def snapshot(self):
+        return {
+            "username": self.username,
+            "bag": {str(k): v for k, v in self.BAG.items()},
+            "caught": self.CAUGHT,
+            "candy": {str(k): v for k, v in self.CANDY.items()},
+            "stardust": self.STARDUST,
+            "xp": self.XP,
+            "level": self.LEVEL,
+            "coins": self.COINS,
+            "stats": self.STATS,
+            "claimed_levels": self.CLAIMED_LEVELS,
+            "deleted": {str(k): v for k, v in self.DELETED.items()},
+            "pokedex": {str(k): list(v) for k, v in self.POKEDEX.items()},
+            "team": self.TEAM,
+            "pw": self.PW,
+            "applied": self.APPLIED,
+            "eggs": self.EGGS,
+            "incubators": self.INCUBATORS,
+            "hatched": self.HATCHED,
+            "max_pokemon": self.MAX_POKEMON,
+            "max_items": self.MAX_ITEMS,
+        }
+
+    def save(self):
+        try:
+            os.makedirs(SAVES_DIR, exist_ok=True)
+            tmp = self.file + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as fh:
+                json.dump(self.snapshot(), fh, indent=1)
+            os.replace(tmp, self.file)     # atomic; never a half-written save
+        except OSError:
+            pass                           # a failed save must never break play
+
+    def load_from(self, path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                d = json.load(fh)
+        except (OSError, ValueError):
+            return False
+
+        self.BAG = {}
+        for k, v in (d.get("bag") or {}).items():
+            try:
+                self.BAG[int(k)] = int(v)
+            except (TypeError, ValueError):
+                pass
+        if not self.BAG:
+            self.BAG = dict(_STARTING_BAG)
+
+        self.CAUGHT = [c for c in (d.get("caught") or []) if isinstance(c, dict)]
+        seen = set()
+        for c in self.CAUGHT:
+            u = int(c.get("uid", 0) or 0)
+            if not u or u in seen:
+                u = _fresh_uid(seen)
+                c["uid"] = u
+            seen.add(u)
+
+        self.CANDY = {}
+        for k, v in (d.get("candy") or {}).items():
+            try:
+                self.CANDY[int(k)] = int(v)
+            except (TypeError, ValueError):
+                pass
+
+        self.DELETED = {}
+        for k, v in (d.get("deleted") or {}).items():
+            try:
+                self.DELETED[int(k)] = int(v)
+            except (TypeError, ValueError):
+                pass
+
+        self.POKEDEX = {}
+        for k, v in (d.get("pokedex") or {}).items():
+            try:
+                self.POKEDEX[int(k)] = [int(v[0]), int(v[1])]
+            except (TypeError, ValueError, IndexError):
+                pass
+
+        for c in self.CAUGHT:
+            pid = int(c.get("pokemon_id", 0) or 0)
+            if pid and pid not in self.POKEDEX:
+                self.POKEDEX[pid] = [1, 1]
+
+        self.TEAM = int(d.get("team", 0) or 0)
+        self.PW = str(d.get("pw", "") or "")
+        self.APPLIED = [a for a in (d.get("applied") or []) if isinstance(a, dict)]
+        self.EGGS = [e for e in (d.get("eggs") or []) if isinstance(e, dict)]
+        inc = [i for i in (d.get("incubators") or []) if isinstance(i, dict)]
+        if inc:
+            self.INCUBATORS = inc
+        self.HATCHED = [h for h in (d.get("hatched") or []) if isinstance(h, dict)]
+        self.STARDUST = int(d.get("stardust", self.STARDUST) or self.STARDUST)
+        self.XP = int(d.get("xp", 0) or 0)
+        self.COINS = int(d.get("coins", 0) or 0)
+        self.MAX_POKEMON = int(d.get("max_pokemon", 250) or 250)
+        self.MAX_ITEMS = int(d.get("max_items", 350) or 350)
+
+        for k, v in (d.get("stats") or {}).items():
+            if k in self.STATS:
+                self.STATS[k] = v
+
+        self.CLAIMED_LEVELS = [
+            int(x)
+            for x in (d.get("claimed_levels") or [])
+            if str(x).lstrip("-").isdigit()
+        ]
+        self.LEVEL = level_for_xp(self.XP)
+        if not self.CLAIMED_LEVELS:
+            self.CLAIMED_LEVELS = list(range(1, self.LEVEL + 1))
+        return True
+
+
+# ==============================================================================
+# Player Session & Account Context Management
+# ==============================================================================
+
 def use(username):
     """Make `username` the account for this request (called by rpc.py)."""
     name = username or "player"
@@ -260,11 +322,9 @@ def use(username):
             if os.path.exists(path):
                 p.load_from(path)
             else:
-                # No save for this account yet. If the old single-player save.json
-                # is still around and nobody has claimed it, adopt it so an
-                # existing collection carries over instead of starting from zero.
                 have_any = os.path.isdir(SAVES_DIR) and any(
-                    f.endswith(".json") for f in os.listdir(SAVES_DIR))
+                    f.endswith(".json") for f in os.listdir(SAVES_DIR)
+                )
                 if not have_any and os.path.exists(SAVE_FILE) and p.load_from(SAVE_FILE):
                     p.username = name
                 p.save()
@@ -280,6 +340,10 @@ def current():
     return p
 
 
+def save():
+    current().save()
+
+
 def accounts():
     """Summary of every save on disk, for the World Manager."""
     out = []
@@ -290,11 +354,15 @@ def accounts():
             try:
                 with open(os.path.join(SAVES_DIR, fn), encoding="utf-8") as fh:
                     d = json.load(fh)
-                out.append({"username": d.get("username", fn[:-5]),
-                            "level": level_for_xp(int(d.get("xp", 0) or 0)),
-                            "xp": int(d.get("xp", 0) or 0),
-                            "caught": len(d.get("caught") or []),
-                            "coins": int(d.get("coins", 0) or 0)})
+                out.append(
+                    {
+                        "username": d.get("username", fn[:-5]),
+                        "level": level_for_xp(int(d.get("xp", 0) or 0)),
+                        "xp": int(d.get("xp", 0) or 0),
+                        "caught": len(d.get("caught") or []),
+                        "coins": int(d.get("coins", 0) or 0),
+                    }
+                )
             except (OSError, ValueError):
                 continue
     except OSError:
@@ -302,10 +370,91 @@ def accounts():
     return out
 
 
-# module-level names (world.BAG, world.CANDY, ...) forward to the current player
-_FORWARD = {"BAG", "CAUGHT", "CANDY", "STARDUST", "XP", "LEVEL", "COINS", "DELETED", "POKEDEX",
-            "EGGS", "INCUBATORS", "HATCHED", "TEAM", "BERRIES", "APPLIED",
-            "MAX_POKEMON", "MAX_ITEMS", "CLAIMED_LEVELS", "STATS"}
+def account_names():
+    """Every account we know of: loaded ones plus saved files."""
+    names = set(_players)
+    try:
+        for fn in os.listdir(SAVES_DIR):
+            if fn.endswith(".json") and not fn.startswith("_"):
+                names.add(fn[:-len(".json")])
+    except OSError:
+        pass
+    return sorted(names)
+
+
+@contextlib.contextmanager
+def acting_as(username):
+    """Run a block as another account, on THIS thread only."""
+    name = (username or "").strip()
+    if not name or name not in account_names():
+        raise KeyError(name)
+    prev = getattr(_current, "player", None)
+    try:
+        yield use(name)
+    finally:
+        _current.player = prev
+
+
+def check_login(username, password):
+    """(ok, reason, name). The FIRST login for a name claims it and sets the password."""
+    name = (username or "").strip()
+    if not name:
+        return False, "no username", None
+    real = next((n for n in account_names() if n.lower() == name.lower()), name)
+    prev = getattr(_current, "player", None)
+    try:
+        p = use(real)
+        if not p.PW:
+            p.PW = _hash_pw(password)
+            p.save()
+            return True, "claimed", real
+        salt = p.PW.split("$", 1)[0]
+        if hmac.compare_digest(p.PW, _hash_pw(password, salt)):
+            return True, "ok", real
+        return False, "wrong password", real
+    finally:
+        _current.player = prev
+
+
+def set_password(username, password):
+    """Used by the World Manager to reset a forgotten password."""
+    real = next(
+        (n for n in account_names() if n.lower() == (username or "").lower()), None
+    )
+    if not real:
+        return False
+    prev = getattr(_current, "player", None)
+    try:
+        p = use(real)
+        p.PW = _hash_pw(password)
+        p.save()
+        return True
+    finally:
+        _current.player = prev
+
+
+def has_password(username):
+    real = next(
+        (n for n in account_names() if n.lower() == (username or "").lower()), None
+    )
+    if not real:
+        return False
+    prev = getattr(_current, "player", None)
+    try:
+        return bool(use(real).PW)
+    finally:
+        _current.player = prev
+
+
+# ==============================================================================
+# Dynamic Attribute Forwarding
+# ==============================================================================
+
+_FORWARD = {
+    "BAG", "CAUGHT", "CANDY", "STARDUST", "XP", "LEVEL", "COINS", "DELETED",
+    "POKEDEX", "EGGS", "INCUBATORS", "HATCHED", "TEAM", "BERRIES", "APPLIED",
+    "MAX_POKEMON", "MAX_ITEMS", "CLAIMED_LEVELS", "STATS"
+}
 
 
 def __getattr__(name):
@@ -314,102 +463,10 @@ def __getattr__(name):
     raise AttributeError(name)
 
 
-def save():
-    current().save()
+# ==============================================================================
+# Inventory (Bag) & Currency Operations
+# ==============================================================================
 
-
-# ================================================= shared world (all accounts)
-GYMS = {}                          # fort_id -> [{uid, pokemon_id, cp, trainer, team}]
-BATTLES = {}                       # battle_id -> live battle state
-SPAWNS = {}                        # transient
-DESPAWNED = {}                     # encounter_id -> expiry_ms
-# Lures are attached to a FORT and are visible to everyone, so they live in the
-# shared world rather than on one player. fort_id -> {item, expires_ms, by}
-FORT_MODIFIERS = {}
-# "Raid" mode: one boss standing in EVERY gym, shared by all accounts. 0.29 has
-# no raid support at all, so this fakes it with the pieces the client does have --
-# a gym defender under the trainer name "raid" that becomes a catchable wild
-# Pokemon at your feet the moment you knock it out.
-RAID = {"on": False, "pokemon_id": 150, "cp": 3000, "trainer": "raid"}
-RAID_FILE = os.path.join(HERE, "raid.json")
-BONUS_SPAWNS = {}                  # username -> [ {eid,pid,cp,lat,lng,expires_ms} ]
-_MAX_SPAWNS = 4000
-
-
-def save_gyms():
-    try:
-        tmp = GYMS_FILE + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"gyms": GYMS}, fh, indent=1)
-        os.replace(tmp, GYMS_FILE)
-    except OSError:
-        pass
-
-
-def load_gyms():
-    try:
-        with open(GYMS_FILE, "r", encoding="utf-8") as fh:
-            d = json.load(fh)
-        GYMS.clear()
-        GYMS.update({k: v for k, v in (d.get("gyms") or {}).items()
-                     if isinstance(v, list)})
-        return True
-    except (OSError, ValueError):
-        pass
-    try:                       # migrate gyms out of the old single-player save
-        with open(SAVE_FILE, "r", encoding="utf-8") as fh:
-            d = json.load(fh)
-        GYMS.update({k: v for k, v in (d.get("gyms") or {}).items()
-                     if isinstance(v, list)})
-        if GYMS:
-            save_gyms()
-    except (OSError, ValueError):
-        pass
-    return False
-
-
-# --- spawns ------------------------------------------------------------------
-def remember_spawn(encounter_id, pokemon_id, lat, lng, cp, spawn_id, expires_ms):
-    with _lock:
-        if len(SPAWNS) >= _MAX_SPAWNS:
-            for k in sorted(SPAWNS, key=lambda k: SPAWNS[k]["expires_ms"])[:_MAX_SPAWNS // 2]:
-                SPAWNS.pop(k, None)
-        SPAWNS[encounter_id] = {"pokemon_id": pokemon_id, "lat": lat, "lng": lng,
-                                "cp": cp, "spawn_id": spawn_id, "expires_ms": expires_ms}
-
-
-def get_spawn(encounter_id):
-    with _lock:
-        s = SPAWNS.get(encounter_id)
-        return dict(s) if s else None
-
-
-def remove_spawn(encounter_id):
-    with _lock:
-        SPAWNS.pop(encounter_id, None)
-
-
-def mark_despawned(encounter_id, until_ms):
-    with _lock:
-        DESPAWNED[encounter_id] = until_ms
-        if len(DESPAWNED) > 5000:
-            now = int(time.time() * 1000)
-            for k in [k for k, v in DESPAWNED.items() if v < now]:
-                DESPAWNED.pop(k, None)
-
-
-def is_despawned(encounter_id):
-    with _lock:
-        exp = DESPAWNED.get(encounter_id)
-        if exp is None:
-            return False
-        if exp < int(time.time() * 1000):
-            DESPAWNED.pop(encounter_id, None)
-            return False
-        return True
-
-
-# --- bag ---------------------------------------------------------------------
 def add_item(item_id, count):
     p = current()
     with _lock:
@@ -436,17 +493,133 @@ def bag_items():
 
 
 def bag_count():
+    return sum(current().BAG.values())
+
+
+def bag_full():
+    return bag_count() >= current().MAX_ITEMS
+
+
+def room_in_bag():
+    return max(0, current().MAX_ITEMS - bag_count())
+
+
+def add_coins(n):
+    p = current()
     with _lock:
-        return sum(current().BAG.values())
+        p.COINS += int(n)
+        out = p.COINS
+    p.save()
+    return out
 
 
-# --- caught pokemon ----------------------------------------------------------
+def spend_coins(n):
+    """Take PokeCoins for a shop purchase. False if there aren't enough."""
+    p = current()
+    with _lock:
+        if p.COINS < int(n):
+            return False
+        p.COINS -= int(n)
+    p.save()
+    return True
+
+
+def add_stardust(n):
+    """Stardust adder."""
+    p = current()
+    with _lock:
+        p.STARDUST += int(n)
+        out = p.STARDUST
+    p.save()
+    return out
+
+
+def candy(family):
+    with _lock:
+        return current().CANDY.get(family, 0)
+
+
+def add_candy(family, n):
+    p = current()
+    with _lock:
+        p.CANDY[family] = p.CANDY.get(family, 0) + n
+        out = p.CANDY[family]
+    p.save()
+    return out
+
+
+def spend(family=None, candy_n=0, dust_n=0):
+    p = current()
+    with _lock:
+        if candy_n and p.CANDY.get(family, 0) < candy_n:
+            return False
+        if dust_n and p.STARDUST < dust_n:
+            return False
+        if candy_n:
+            p.CANDY[family] = p.CANDY.get(family, 0) - candy_n
+        if dust_n:
+            p.STARDUST -= dust_n
+    p.save()
+    return True
+
+
+# ==============================================================================
+# Player Leveling, XP, Claims & Stats
+# ==============================================================================
+
+def stats():
+    p = current()
+    with _lock:
+        return p.LEVEL, p.XP
+
+
+def add_xp(n):
+    p = current()
+    n = int(n) * xp_multiplier()          # Lucky Egg
+    with _lock:
+        p.XP += n
+        p.LEVEL = level_for_xp(p.XP)
+    p.save()
+    return p.XP
+
+
+def bump(counter, n=1):
+    p = current()
+    with _lock:
+        if counter in p.STATS:
+            p.STATS[counter] += n
+    p.save()
+
+
+def level_claimed(level):
+    with _lock:
+        return int(level) in current().CLAIMED_LEVELS
+
+
+def claim_level(level):
+    p = current()
+    with _lock:
+        if int(level) not in p.CLAIMED_LEVELS:
+            p.CLAIMED_LEVELS.append(int(level))
+    p.save()
+
+
+# ==============================================================================
+# Pokemon Collection & Storage Operations
+# ==============================================================================
+
 def add_caught(uid, pokemon_id, cp):
     p = current()
     with _lock:
         p.DELETED.pop(int(uid), None)     # never report a live Pokemon as deleted
-        p.CAUGHT.append({"uid": uid, "pokemon_id": pokemon_id, "cp": cp,
-                         "caught_ms": int(time.time() * 1000)})
+        p.CAUGHT.append(
+            {
+                "uid": uid,
+                "pokemon_id": pokemon_id,
+                "cp": cp,
+                "caught_ms": int(time.time() * 1000),
+            }
+        )
         p.STATS["pokemons_captured"] += 1
         p.STATS["pokeballs_thrown"] += 1
         p.STATS["unique_pokedex_entries"] = len({c["pokemon_id"] for c in p.CAUGHT})
@@ -499,9 +672,7 @@ def release(uid):
 
 
 def recent_deletions(max_age_ms=1800000):
-    """Pokemon removed recently, so the inventory delta can keep confirming the
-    deletion until the client has certainly seen it. Old entries are dropped so
-    the list cannot grow without bound."""
+    """Pokemon removed recently, so the inventory delta can keep confirming the deletion."""
     p = current()
     cutoff = int(time.time() * 1000) - max_age_ms
     with _lock:
@@ -511,173 +682,102 @@ def recent_deletions(max_age_ms=1800000):
         return sorted(p.DELETED.items())
 
 
-def stats():
+def pokemon_full():
     p = current()
-    with _lock:
-        return p.LEVEL, p.XP
+    return len(p.CAUGHT) + len(p.EGGS) >= p.MAX_POKEMON
 
 
-def add_xp(n):
+def buy_storage(kind):
     p = current()
-    n = int(n) * xp_multiplier()          # Lucky Egg
+    step = _cfg.get(
+        "storage",
+        "pokemon_upgrade_step" if kind == "pokemon" else "items_upgrade_step",
+        cast=int,
+    )
+    cost = _cfg.get(
+        "storage",
+        "pokemon_upgrade_cost" if kind == "pokemon" else "items_upgrade_cost",
+        cast=int,
+    )
+    cap = _cfg.get(
+        "storage",
+        "max_pokemon_limit" if kind == "pokemon" else "max_items_limit",
+        cast=int,
+    )
     with _lock:
-        p.XP += n
-        p.LEVEL = level_for_xp(p.XP)
+        cur = p.MAX_POKEMON if kind == "pokemon" else p.MAX_ITEMS
+        if cur + step > cap:
+            return False, f"already at the maximum ({cap})", cur
+        if p.COINS < cost:
+            return False, f"need {cost} PokeCoins, you have {p.COINS}", cur
+        p.COINS -= cost
+        if kind == "pokemon":
+            p.MAX_POKEMON = cur + step
+            new = p.MAX_POKEMON
+        else:
+            p.MAX_ITEMS = cur + step
+            new = p.MAX_ITEMS
     p.save()
-    return p.XP
+    return True, f"+{step} space for {cost} coins", new
 
 
-def bump(counter, n=1):
+def storage():
     p = current()
     with _lock:
-        if counter in p.STATS:
-            p.STATS[counter] += n
+        return {
+            "max_pokemon": p.MAX_POKEMON,
+            "max_items": p.MAX_ITEMS,
+            "pokemon_used": len(p.CAUGHT),
+            "items_used": sum(p.BAG.values()),
+            "coins": p.COINS,
+            "stardust": p.STARDUST,
+        }
+
+
+# ==============================================================================
+# Pokédex Mechanics
+# ==============================================================================
+
+def pokedex_saw(pokemon_id):
+    p = current()
+    with _lock:
+        e = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
+        e[0] += 1
     p.save()
 
 
-def add_coins(n):
+def pokedex_caught(pokemon_id):
     p = current()
     with _lock:
-        p.COINS = max(0, p.COINS + n)
-    p.save()
-    return p.COINS
-
-
-def level_claimed(level):
-    with _lock:
-        return int(level) in current().CLAIMED_LEVELS
-
-
-def claim_level(level):
-    p = current()
-    with _lock:
-        if int(level) not in p.CLAIMED_LEVELS:
-            p.CLAIMED_LEVELS.append(int(level))
+        e = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
+        e[1] += 1
+        if e[0] < e[1]:
+            e[0] = e[1]          # caught implies seen
     p.save()
 
 
-# --- candy / stardust --------------------------------------------------------
-def add_candy(family, n):
-    p = current()
+def pokedex():
     with _lock:
-        p.CANDY[family] = p.CANDY.get(family, 0) + n
-        out = p.CANDY[family]
-    p.save()
-    return out
+        return sorted((pid, v[0], v[1]) for pid, v in current().POKEDEX.items())
 
 
-def _hash_pw(password, salt=None):
-    """PBKDF2 -- passwords are never stored in the clear, not even on a server
-    that only your family can reach."""
-    salt = salt or os.urandom(8).hex()
-    h = hashlib.pbkdf2_hmac("sha256", (password or "").encode("utf-8"),
-                            salt.encode("ascii"), 60000).hex()
-    return f"{salt}${h}"
+# ==============================================================================
+# Eggs, Incubation & Walking Mechanics
+# ==============================================================================
 
-
-def check_login(username, password):
-    """(ok, reason, name). The FIRST login for a name claims it and sets the
-    password; after that the password has to match. An unknown name is claimed
-    rather than refused, so a new trainer can just sign in and start playing."""
-    name = (username or "").strip()
-    if not name:
-        return False, "no username", None
-    real = next((n for n in account_names() if n.lower() == name.lower()), name)
-    prev = getattr(_current, "player", None)
-    try:
-        p = use(real)
-        if not p.PW:
-            p.PW = _hash_pw(password)
-            p.save()
-            return True, "claimed", real
-        salt = p.PW.split("$", 1)[0]
-        if hmac.compare_digest(p.PW, _hash_pw(password, salt)):
-            return True, "ok", real
-        return False, "wrong password", real
-    finally:
-        _current.player = prev
-
-
-def set_password(username, password):
-    """Used by the World Manager to reset a forgotten password."""
-    real = next((n for n in account_names() if n.lower() == (username or "").lower()),
-                None)
-    if not real:
-        return False
-    prev = getattr(_current, "player", None)
-    try:
-        p = use(real)
-        p.PW = _hash_pw(password)
-        p.save()
-        return True
-    finally:
-        _current.player = prev
-
-
-def has_password(username):
-    real = next((n for n in account_names() if n.lower() == (username or "").lower()),
-                None)
-    if not real:
-        return False
-    prev = getattr(_current, "player", None)
-    try:
-        return bool(use(real).PW)
-    finally:
-        _current.player = prev
-
-
-def account_names():
-    """Every account we know of: loaded ones plus saved files."""
-    names = set(_players)
-    try:
-        for fn in os.listdir(SAVES_DIR):
-            if fn.endswith(".json") and not fn.startswith("_"):
-                names.add(fn[:-len(".json")])
-    except OSError:
-        pass
-    return sorted(names)
-
-
-@contextlib.contextmanager
-def acting_as(username):
-    """Run a block as another account, on THIS thread only.
-
-    The admin site runs on its own thread, so switching the thread-local player
-    here cannot disturb an in-flight game request. Restores the previous player
-    afterwards either way. Raises KeyError if the account has never been seen --
-    we do NOT want a typo silently creating a new save.
-    """
-    name = (username or "").strip()
-    if not name or name not in account_names():
-        raise KeyError(name)
-    prev = getattr(_current, "player", None)
-    try:
-        yield use(name)
-    finally:
-        _current.player = prev
-
-
-# ------------------------------------------------------------------ EGGS
 def km_walked():
     return float(current().STATS.get("km_walked", 0.0) or 0.0)
 
 
 def add_distance(lat, lng):
-    """Accumulate real walked distance from successive GPS fixes.
-
-    Eggs only make sense if the distance is EARNED, so this is deliberately
-    strict: a jump bigger than `max_step_m` is treated as a teleport (or GPS
-    glitch) and contributes nothing, and sub-metre jitter is ignored so a
-    stationary phone can't hatch an egg by trembling.
-    """
+    """Accumulate real walked distance from successive GPS fixes."""
     p = current()
     prev = p.LAST_POS
     p.LAST_POS = (lat, lng)
     if not prev:
         return 0.0
     dlat = (lat - prev[0]) * 111320.0
-    dlng = ((lng - prev[1]) * 111320.0
-            * math.cos(math.radians((lat + prev[0]) / 2.0)))
+    dlng = (lng - prev[1]) * 111320.0 * math.cos(math.radians((lat + prev[0]) / 2.0))
     metres = math.hypot(dlat, dlng)
     lo = _cfg.get("eggs", "min_step_m", cast=float)
     hi = _cfg.get("eggs", "max_step_m", cast=float)
@@ -704,19 +804,24 @@ def give_egg(target_km):
     with _lock:
         if len(p.EGGS) >= _cfg.get("eggs", "max_eggs", cast=int):
             return None
-        uid = _fresh_uid({c["uid"] for c in p.CAUGHT}
-                         | {e["uid"] for e in p.EGGS} | set(p.DELETED))
-        egg = {"uid": uid, "target_km": float(target_km),
-               "start_km": 0.0, "incubator": ""}
+        uid = _fresh_uid(
+            {c["uid"] for c in p.CAUGHT}
+            | {e["uid"] for e in p.EGGS}
+            | set(p.DELETED)
+        )
+        egg = {
+            "uid": uid,
+            "target_km": float(target_km),
+            "start_km": 0.0,
+            "incubator": "",
+        }
         p.EGGS.append(egg)
     p.save()
     return dict(egg)
 
 
 def use_incubator(incubator_id, egg_uid):
-    """Put an egg in an incubator. Returns a UseItemEggIncubator result code:
-    1=SUCCESS 2=NO_INCUBATOR 3=NO_EGG 4=NOT_AN_EGG 5=INCUBATOR_BUSY
-    6=EGG_ALREADY_INCUBATING 7=NO_USES_LEFT."""
+    """Put an egg in an incubator."""
     p = current()
     with _lock:
         inc = next((i for i in p.INCUBATORS if i["id"] == incubator_id), None)
@@ -734,15 +839,13 @@ def use_incubator(incubator_id, egg_uid):
         start = km_walked()
         egg["start_km"] = start
         egg["incubator"] = incubator_id
-        inc.update(egg=egg_uid, start_km=start,
-                   target_km=start + egg["target_km"])
+        inc.update(egg=egg_uid, start_km=start, target_km=start + egg["target_km"])
     p.save()
     return 1, dict(inc)
 
 
 def check_hatches(pick_species):
-    """Hatch any egg that has covered its distance. `pick_species(target_km)`
-    supplies the species so the rarity logic can live in protocol.py."""
+    """Hatch any egg that has covered its distance."""
     p = current()
     done = []
     with _lock:
@@ -754,10 +857,19 @@ def check_hatches(pick_species):
                 continue
             tier = egg["target_km"]
             pid, cp = pick_species(tier)
-            uid = _fresh_uid({c["uid"] for c in p.CAUGHT}
-                             | {e["uid"] for e in p.EGGS} | set(p.DELETED))
-            p.CAUGHT.append({"uid": uid, "pokemon_id": pid, "cp": cp,
-                             "caught_ms": int(time.time() * 1000)})
+            uid = _fresh_uid(
+                {c["uid"] for c in p.CAUGHT}
+                | {e["uid"] for e in p.EGGS}
+                | set(p.DELETED)
+            )
+            p.CAUGHT.append(
+                {
+                    "uid": uid,
+                    "pokemon_id": pid,
+                    "cp": cp,
+                    "caught_ms": int(time.time() * 1000),
+                }
+            )
             p.EGGS.remove(egg)
             for i in p.INCUBATORS:
                 if i["id"] == egg["incubator"]:
@@ -767,9 +879,16 @@ def check_hatches(pick_species):
             xp = int(tier) * 100
             candy = 2 + int(tier)
             dust = int(tier) * 100
-            rec = {"uid": uid, "pokemon_id": pid, "cp": cp, "km": tier,
-                   "xp": xp, "candy": candy, "stardust": dust,
-                   "egg_uid": egg["uid"]}
+            rec = {
+                "uid": uid,
+                "pokemon_id": pid,
+                "cp": cp,
+                "km": tier,
+                "xp": xp,
+                "candy": candy,
+                "stardust": dust,
+                "egg_uid": egg["uid"],
+            }
             p.HATCHED.append(rec)
             done.append(rec)
     if done:
@@ -787,32 +906,12 @@ def drain_hatched():
     return out
 
 
-def pokedex_saw(pokemon_id):
-    p = current()
-    with _lock:
-        e = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
-        e[0] += 1
-    p.save()
-
-
-def pokedex_caught(pokemon_id):
-    p = current()
-    with _lock:
-        e = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
-        e[1] += 1
-        if e[0] < e[1]:
-            e[0] = e[1]          # caught implies seen
-    p.save()
-
-
-def pokedex():
-    with _lock:
-        return sorted((pid, v[0], v[1]) for pid, v in current().POKEDEX.items())
-
+# ==============================================================================
+# Temporary Buffs, Items & Fort Modifiers
+# ==============================================================================
 
 def apply_item(item_id, minutes):
-    """Start a Lucky Egg / Incense. (result_code, entry): 1=SUCCESS,
-    2=ALREADY_ACTIVE, 3=NONE_IN_INVENTORY."""
+    """Start a Lucky Egg / Incense."""
     p = current()
     now = int(time.time() * 1000)
     with _lock:
@@ -821,8 +920,11 @@ def apply_item(item_id, minutes):
             return 2, None
     if not take_item(int(item_id), 1):
         return 3, None
-    entry = {"item": int(item_id), "applied_ms": now,
-             "expires_ms": now + int(minutes * 60000)}
+    entry = {
+        "item": int(item_id),
+        "applied_ms": now,
+        "expires_ms": now + int(minutes * 60000),
+    }
     with _lock:
         p.APPLIED.append(entry)
     p.save()
@@ -847,7 +949,7 @@ def xp_multiplier():
 
 
 def add_fort_modifier(fort_id, item_id, minutes, by):
-    """Attach a Lure to a PokeStop. 1=SUCCESS 2=ALREADY_HAS_ONE 4=NO_ITEM."""
+    """Attach a Lure to a PokeStop."""
     now = int(time.time() * 1000)
     with _lock:
         cur = FORT_MODIFIERS.get(fort_id)
@@ -876,127 +978,11 @@ def fort_modifier(fort_id):
 def lured_forts():
     now = int(time.time() * 1000)
     with _lock:
-        for fid in [k for k, m in FORT_MODIFIERS.items()
-                    if m.get("expires_ms", 0) <= now]:
+        for fid in [
+            k for k, m in FORT_MODIFIERS.items() if m.get("expires_ms", 0) <= now
+        ]:
             FORT_MODIFIERS.pop(fid, None)
         return {k: dict(v) for k, v in FORT_MODIFIERS.items()}
-
-
-def add_stardust(n):
-    """Stardust had no adder at all -- it could only ever be SPENT (spend()), so
-    the total drifted down from its starting value and never up."""
-    p = current()
-    with _lock:
-        p.STARDUST += int(n)
-        out = p.STARDUST
-    p.save()
-    return out
-
-
-def candy(family):
-    with _lock:
-        return current().CANDY.get(family, 0)
-
-
-def spend(family=None, candy_n=0, dust_n=0):
-    p = current()
-    with _lock:
-        if candy_n and p.CANDY.get(family, 0) < candy_n:
-            return False
-        if dust_n and p.STARDUST < dust_n:
-            return False
-        if candy_n:
-            p.CANDY[family] = p.CANDY.get(family, 0) - candy_n
-        if dust_n:
-            p.STARDUST -= dust_n
-    p.save()
-    return True
-
-
-# --- storage -----------------------------------------------------------------
-def spend_coins(n):
-    """Take PokeCoins for a shop purchase. False if there aren't enough."""
-    p = current()
-    with _lock:
-        if p.COINS < int(n):
-            return False
-        p.COINS -= int(n)
-    p.save()
-    return True
-
-
-def add_coins(n):
-    p = current()
-    with _lock:
-        p.COINS += int(n)
-        out = p.COINS
-    p.save()
-    return out
-
-
-def buy_storage(kind):
-    p = current()
-    step = _cfg.get("storage", "pokemon_upgrade_step" if kind == "pokemon"
-                    else "items_upgrade_step", cast=int)
-    cost = _cfg.get("storage", "pokemon_upgrade_cost" if kind == "pokemon"
-                    else "items_upgrade_cost", cast=int)
-    cap = _cfg.get("storage", "max_pokemon_limit" if kind == "pokemon"
-                   else "max_items_limit", cast=int)
-    with _lock:
-        cur = p.MAX_POKEMON if kind == "pokemon" else p.MAX_ITEMS
-        if cur + step > cap:
-            return False, f"already at the maximum ({cap})", cur
-        if p.COINS < cost:
-            return False, f"need {cost} PokeCoins, you have {p.COINS}", cur
-        p.COINS -= cost
-        if kind == "pokemon":
-            p.MAX_POKEMON = cur + step
-            new = p.MAX_POKEMON
-        else:
-            p.MAX_ITEMS = cur + step
-            new = p.MAX_ITEMS
-    p.save()
-    return True, f"+{step} space for {cost} coins", new
-
-
-def storage():
-    p = current()
-    with _lock:
-        return {"max_pokemon": p.MAX_POKEMON, "max_items": p.MAX_ITEMS,
-                "pokemon_used": len(p.CAUGHT), "items_used": sum(p.BAG.values()),
-                "coins": p.COINS, "stardust": p.STARDUST}
-
-
-# --- gyms (shared between accounts) ------------------------------------------
-def _defender_minutes():
-    return _cfg.get("gyms", "defender_minutes", env="DEFENDER_MINUTES", cast=float)
-
-
-def _defender_coins():
-    return _cfg.get("gyms", "defender_coins", env="DEFENDER_COINS", cast=int)
-
-
-def _max_defenders():
-    return _cfg.get("gyms", "max_defenders", cast=int)
-
-
-def my_team():
-    """The team this trainer picked in game. Falls back to the settings value for
-    accounts created before teams could be chosen."""
-    t = current().TEAM
-    return t if t else _cfg.get("gyms", "team", env="TEAM", cast=int)
-
-
-def set_team(team):
-    """SetPlayerTeam. Returns (status, team): 1=SUCCESS, 2=TEAM_ALREADY_SET."""
-    p = current()
-    with _lock:
-        if p.TEAM:
-            return 2, p.TEAM
-        p.TEAM = max(1, min(3, int(team)))
-        out = p.TEAM
-    p.save()
-    return 1, out
 
 
 def use_berry(encounter_id, mult):
@@ -1012,54 +998,83 @@ def berry_mult(encounter_id, consume=False):
     return m
 
 
-def pokemon_full():
-    p = current()
-    return len(p.CAUGHT) + len(p.EGGS) >= p.MAX_POKEMON
+# ==============================================================================
+# Shared World State Data & Spawns
+# ==============================================================================
+
+GYMS = {}                          # fort_id -> [{uid, pokemon_id, cp, trainer, team}]
+BATTLES = {}                       # battle_id -> live battle state
+SPAWNS = {}                        # transient
+DESPAWNED = {}                     # encounter_id -> expiry_ms
+FORT_MODIFIERS = {}                # fort_id -> {item, expires_ms, by}
+RAID = {"on": False, "pokemon_id": 150, "cp": 3000, "trainer": "raid"}
+BONUS_SPAWNS = {}                  # username -> [ {eid,pid,cp,lat,lng,expires_ms} ]
+_MAX_SPAWNS = 4000
 
 
-def bag_count():
-    return sum(current().BAG.values())
-
-
-def bag_full():
-    return bag_count() >= current().MAX_ITEMS
-
-
-def room_in_bag():
-    return max(0, current().MAX_ITEMS - bag_count())
-
-
-def _raid_member(fort_id):
-    """The boss that stands in every gym while raid mode is on. Its uid is derived
-    from the fort so it is stable per gym and never collides with a real Pokemon."""
-    uid = (abs(hash(("raid", fort_id))) & 0x3FFFFFFFFFFFFFFF) | 1
-    return {"uid": uid, "pokemon_id": int(RAID["pokemon_id"]),
-            "cp": int(RAID["cp"]), "trainer": RAID.get("trainer", "raid"),
-            "team": 0, "raid": True, "deployed_ms": int(time.time() * 1000)}
-
-
-def is_raid_uid(fort_id, uid):
-    return RAID["on"] and _raid_member(fort_id)["uid"] == uid
-
-
-def gym_members(fort_id):
+def remember_spawn(encounter_id, pokemon_id, lat, lng, cp, spawn_id, expires_ms):
     with _lock:
-        if RAID["on"]:
-            # The boss REPLACES whatever was defending. Real defenders were sent
-            # home when raid mode was switched on, so nothing is lost.
-            return [_raid_member(fort_id)]
-        return list(GYMS.get(fort_id, []))
+        if len(SPAWNS) >= _MAX_SPAWNS:
+            for k in sorted(SPAWNS, key=lambda k: SPAWNS[k]["expires_ms"])[: _MAX_SPAWNS // 2]:
+                SPAWNS.pop(k, None)
+        SPAWNS[encounter_id] = {
+            "pokemon_id": pokemon_id,
+            "lat": lat,
+            "lng": lng,
+            "cp": cp,
+            "spawn_id": spawn_id,
+            "expires_ms": expires_ms,
+        }
 
+
+def get_spawn(encounter_id):
+    with _lock:
+        s = SPAWNS.get(encounter_id)
+        return dict(s) if s else None
+
+
+def remove_spawn(encounter_id):
+    with _lock:
+        SPAWNS.pop(encounter_id, None)
+
+
+def mark_despawned(encounter_id, until_ms):
+    with _lock:
+        DESPAWNED[encounter_id] = until_ms
+        if len(DESPAWNED) > 5000:
+            now = int(time.time() * 1000)
+            for k in [k for k, v in DESPAWNED.items() if v < now]:
+                DESPAWNED.pop(k, None)
+
+
+def is_despawned(encounter_id):
+    with _lock:
+        exp = DESPAWNED.get(encounter_id)
+        if exp is None:
+            return False
+        if exp < int(time.time() * 1000):
+            DESPAWNED.pop(encounter_id, None)
+            return False
+        return True
+
+
+# ==============================================================================
+# Shared Raids & Bonus Spawns
+# ==============================================================================
 
 def load_raid():
     global RAID
     try:
         with open(RAID_FILE, "r", encoding="utf-8") as fh:
             d = json.load(fh)
-        RAID.update({"on": bool(d.get("on", False)),
-                     "pokemon_id": int(d.get("pokemon_id", 150) or 150),
-                     "cp": int(d.get("cp", 3000) or 3000),
-                     "trainer": str(d.get("trainer", "raid") or "raid")})
+        RAID.update(
+            {
+                "on": bool(d.get("on", False)),
+                "pokemon_id": int(d.get("pokemon_id", 150) or 150),
+                "cp": int(d.get("cp", 3000) or 3000),
+                "trainer": str(d.get("trainer", "raid") or "raid"),
+            }
+        )
     except (OSError, ValueError, TypeError):
         pass
     return dict(RAID)
@@ -1076,8 +1091,7 @@ def save_raid():
 
 
 def set_raid(on=None, pokemon_id=None, cp=None, trainer=None):
-    """Turn raid mode on/off. Switching it ON sends every deployed Pokemon home
-    first, so nobody loses a defender to the boss taking its place."""
+    """Turn raid mode on/off."""
     sent_home = 0
     with _lock:
         if on is not None:
@@ -1101,13 +1115,37 @@ def raid():
         return dict(RAID)
 
 
+def _raid_member(fort_id):
+    uid = (abs(hash(("raid", fort_id))) & 0x3FFFFFFFFFFFFFFF) | 1
+    return {
+        "uid": uid,
+        "pokemon_id": int(RAID["pokemon_id"]),
+        "cp": int(RAID["cp"]),
+        "trainer": RAID.get("trainer", "raid"),
+        "team": 0,
+        "raid": True,
+        "deployed_ms": int(time.time() * 1000),
+    }
+
+
+def is_raid_uid(fort_id, uid):
+    return RAID["on"] and _raid_member(fort_id)["uid"] == uid
+
+
 def add_bonus_spawn(username, eid, pid, cp, lat, lng, expires_ms):
-    """A one-off wild Pokemon placed for ONE trainer -- the defeated raid boss
-    dropping at your feet. Kept per account so it doesn't appear for everyone."""
+    """A one-off wild Pokemon placed for ONE trainer."""
     with _lock:
         lst = BONUS_SPAWNS.setdefault(username, [])
-        lst.append({"eid": eid, "pid": pid, "cp": cp, "lat": lat, "lng": lng,
-                    "expires_ms": expires_ms})
+        lst.append(
+            {
+                "eid": eid,
+                "pid": pid,
+                "cp": cp,
+                "lat": lat,
+                "lng": lng,
+                "expires_ms": expires_ms,
+            }
+        )
         del lst[:-10]
 
 
@@ -1123,6 +1161,81 @@ def drop_bonus_spawn(username, eid):
     with _lock:
         lst = BONUS_SPAWNS.get(username, [])
         BONUS_SPAWNS[username] = [b for b in lst if b["eid"] != eid]
+
+
+# ==============================================================================
+# Shared Gyms Operations
+# ==============================================================================
+
+def _defender_minutes():
+    return _cfg.get("gyms", "defender_minutes", env="DEFENDER_MINUTES", cast=float)
+
+
+def _defender_coins():
+    return _cfg.get("gyms", "defender_coins", env="DEFENDER_COINS", cast=int)
+
+
+def _max_defenders():
+    return _cfg.get("gyms", "max_defenders", cast=int)
+
+
+def save_gyms():
+    try:
+        tmp = GYMS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"gyms": GYMS}, fh, indent=1)
+        os.replace(tmp, GYMS_FILE)
+    except OSError:
+        pass
+
+
+def load_gyms():
+    try:
+        with open(GYMS_FILE, "r", encoding="utf-8") as fh:
+            d = json.load(fh)
+        GYMS.clear()
+        GYMS.update(
+            {k: v for k, v in (d.get("gyms") or {}).items() if isinstance(v, list)}
+        )
+        return True
+    except (OSError, ValueError):
+        pass
+    try:                       # migrate gyms out of old single-player save
+        with open(SAVE_FILE, "r", encoding="utf-8") as fh:
+            d = json.load(fh)
+        GYMS.update(
+            {k: v for k, v in (d.get("gyms") or {}).items() if isinstance(v, list)}
+        )
+        if GYMS:
+            save_gyms()
+    except (OSError, ValueError):
+        pass
+    return False
+
+
+def my_team():
+    """The team this trainer picked in game."""
+    t = current().TEAM
+    return t if t else _cfg.get("gyms", "team", env="TEAM", cast=int)
+
+
+def set_team(team):
+    """SetPlayerTeam."""
+    p = current()
+    with _lock:
+        if p.TEAM:
+            return 2, p.TEAM
+        p.TEAM = max(1, min(3, int(team)))
+        out = p.TEAM
+    p.save()
+    return 1, out
+
+
+def gym_members(fort_id):
+    with _lock:
+        if RAID["on"]:
+            return [_raid_member(fort_id)]
+        return list(GYMS.get(fort_id, []))
 
 
 def gym_team(fort_id):
@@ -1151,9 +1264,17 @@ def deploy(fort_id, uid, trainer=None, team=None):
             return False, "already deployed"
         if len(members) >= _max_defenders():
             return False, "gym full"
-        members.append({"uid": uid, "pokemon_id": c["pokemon_id"], "cp": c["cp"],
-                        "trainer": trainer, "team": team, "owner": p.username,
-                        "deployed_ms": int(time.time() * 1000)})
+        members.append(
+            {
+                "uid": uid,
+                "pokemon_id": c["pokemon_id"],
+                "cp": c["cp"],
+                "trainer": trainer,
+                "team": team,
+                "owner": p.username,
+                "deployed_ms": int(time.time() * 1000),
+            }
+        )
     save_gyms()
     return True, "ok"
 
@@ -1186,8 +1307,7 @@ def gym_guard(fort_id):
 
 
 def collect_gym_returns():
-    """Bring home any Pokemon that has served its shift and pay its coins. Only
-    the account that OWNS a defender gets paid for it."""
+    """Bring home any Pokemon that has served its shift and pay its coins."""
     now = int(time.time() * 1000)
     cutoff = _defender_minutes() * 60_000
     coins = _defender_coins()
@@ -1202,8 +1322,9 @@ def collect_gym_returns():
                     m["deployed_ms"] = now
                     keep.append(m)
                 elif now - dep >= cutoff:
-                    returned.append((fid, m["pokemon_id"], coins,
-                                     m.get("owner"), m["uid"]))
+                    returned.append(
+                        (fid, m["pokemon_id"], coins, m.get("owner"), m["uid"])
+                    )
                 else:
                     keep.append(m)
             if keep:
@@ -1216,7 +1337,7 @@ def collect_gym_returns():
         me = current()
         for fid, pid, c, owner, uid in returned:
             if owner and owner != me.username:
-                continue                    # someone else's defender; they get paid
+                continue
             with _lock:
                 me.COINS += c
                 if faint:
@@ -1237,6 +1358,10 @@ def time_left(fort_id, uid):
             return max(0, int(_defender_minutes() * 60 - (time.time() - dep / 1000)))
     return 0
 
+
+# ==============================================================================
+# Initialization
+# ==============================================================================
 
 load_gyms()
 load_raid()
