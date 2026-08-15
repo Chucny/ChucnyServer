@@ -7,7 +7,15 @@ print("Installing ChucnyServer requirements automatically. Please wait and do no
 sleep(3)
 
 # Define the required networking and geospatial libraries
-LIBRARIES = ["s2sphere", "requests", "urllib3", "certifi"]
+LIBRARIES = [
+    "s2sphere", 
+    "requests", 
+    "urllib3", 
+    "certifi", 
+    "PyQt6", 
+    "PyQt6-WebEngine", 
+    "pywebview"
+]
 
 def run_command(command):
     """Executes a system command and prints its output."""
