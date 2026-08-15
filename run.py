@@ -23,6 +23,159 @@ import threading
 import time
 sys.stdout.reconfigure(encoding='utf-8')
 
+
+# NEW: WORLD MANAGER WINDOW!
+
+import tkinter as tk
+
+import webbrowser
+
+
+
+
+
+
+
+import webview
+
+
+
+
+
+
+
+import os
+import sys
+import threading
+import time
+from PyQt6.QtCore import QUrl, Qt, QPoint
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QLineEdit
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+
+def open_world_manager_popup():
+    url_str = "http://127.0.0.1:8080"
+    
+    # Bypass Chromium's security sandbox layer for root/sudo
+    os.environ["QTWEBENGINE_DISABLE_SANDBOX"] = "1"
+    if "--no-sandbox" not in sys.argv:
+        sys.argv.append("--no-sandbox")
+    if "--disable-setuid-sandbox" not in sys.argv:
+        sys.argv.append("--disable-setuid-sandbox")
+    
+    def run_async_window():
+        app = QApplication.instance() or QApplication(sys.argv)
+        
+        # --- Apple-styled Container Window Setup ---
+        popup = QWidget()
+        popup.setWindowTitle("World Manager")
+        popup.resize(1024, 720)
+        popup.setStyleSheet("background-color: #ECECEC;")  # macOS window gray
+        
+        # REMOVE standard Linux window borders (removes default x, _, [] buttons)
+        popup.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        
+        main_layout = QVBoxLayout(popup)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+        
+        # --- macOS Style Header / Toolbar ---
+        toolbar = QWidget()
+        toolbar.setFixedHeight(42)
+        toolbar.setStyleSheet("QWidget { background-color: #F6F6F6; border-bottom: 1px solid #D1D1D1; }")
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(12, 0, 12, 0)
+        toolbar_layout.setSpacing(10)
+        
+        # --- Window Dragging Logic for Frameless Toolbar ---
+        drag_position = QPoint()
+        
+        def mouse_press_event(event):
+            nonlocal drag_position
+            if event.button() == Qt.MouseButton.LeftButton:
+                drag_position = event.globalPosition().toPoint() - popup.frameGeometry().topLeft()
+                event.accept()
+                
+        def mouse_move_event(event):
+            if event.buttons() == Qt.MouseButton.LeftButton:
+                popup.move(event.globalPosition().toPoint() - drag_position)
+                event.accept()
+                
+        toolbar.mousePressEvent = mouse_press_event
+        toolbar.mouseMoveEvent = mouse_move_event
+        
+        # --- Functional Apple Window Control Buttons ---
+        dots_container = QWidget()
+        dots_layout = QHBoxLayout(dots_container)
+        dots_layout.setContentsMargins(0, 0, 0, 0)
+        dots_layout.setSpacing(8)
+        
+        # Red Dot (Close Window)
+        red_dot = QPushButton()
+        red_dot.setFixedSize(12, 12)
+        red_dot.setStyleSheet("QPushButton { background-color: #FF5F56; border-radius: 6px; border: none; } QPushButton:hover { background-color: #E0433C; }")
+        red_dot.clicked.connect(popup.close)
+        dots_layout.addWidget(red_dot)
+        
+        # Yellow Dot (Minimize Window)
+        yellow_dot = QPushButton()
+        yellow_dot.setFixedSize(12, 12)
+        yellow_dot.setStyleSheet("QPushButton { background-color: #FFBD2E; border-radius: 6px; border: none; } QPushButton:hover { background-color: #DCA323; }")
+        yellow_dot.clicked.connect(popup.showMinimized)
+        dots_layout.addWidget(yellow_dot)
+        
+        # Green Dot (Maximize/Restore Window Toggle)
+        green_dot = QPushButton()
+        green_dot.setFixedSize(12, 12)
+        green_dot.setStyleSheet("QPushButton { background-color: #27C93F; border-radius: 6px; border: none; } QPushButton:hover { background-color: #1EA331; }")
+        
+        def toggle_maximize():
+            if popup.isMaximized():
+                popup.showNormal()
+            else:
+                popup.showMaximized()
+                
+        green_dot.clicked.connect(toggle_maximize)
+        dots_layout.addWidget(green_dot)
+        
+        toolbar_layout.addWidget(dots_container)
+        
+        # Address Bar
+        address_bar = QLineEdit(url_str)
+        address_bar.setReadOnly(True)
+        address_bar.setStyleSheet("""
+            QLineEdit { background-color: #FFFFFF; border: 1px solid #E0E0E0; border-radius: 5px;
+                        padding: 3px 10px; color: #555555; font-family: sans-serif; font-size: 13px; }
+        """)
+        toolbar_layout.addWidget(address_bar, stretch=1)
+        
+        # Apple-Style Refresh Button
+        refresh_btn = QPushButton("↻ Refresh")
+        refresh_btn.setStyleSheet("""
+            QPushButton { background-color: #FFFFFF; border: 1px solid #D1D1D1; border-radius: 5px;
+                          padding: 4px 12px; color: #333333; font-family: sans-serif; font-size: 13px; }
+            QPushButton:hover { background-color: #E5E5E5; }
+            QPushButton:pressed { background-color: #D5D5D5; }
+        """)
+        toolbar_layout.addWidget(refresh_btn)
+        main_layout.addWidget(toolbar)
+        
+        # --- Native Embedded Chromium Engine ---
+        browser = QWebEngineView()
+        browser.setUrl(QUrl(url_str))
+        main_layout.addWidget(browser)
+        
+        refresh_btn.clicked.connect(browser.reload)
+        popup.show()
+        
+        # Non-blocking loop processing window rendering
+        while popup.isVisible():
+            app.processEvents()
+            time.sleep(0.01)
+
+    # Spawn window layout in background thread execution
+    threading.Thread(target=run_async_window, daemon=True).start()
+
+
 # ---- resource base (works when frozen by PyInstaller too) -------------------
 if getattr(sys, "frozen", False):
     BASE = sys._MEIPASS                         # bundled read-only data
@@ -192,7 +345,7 @@ def main():
     raw_game    = f"      -> SSL Game Interface  : https://{redirect_ip}:{os.environ['PORT']}"
     raw_traffic = f"      -> Overriding Traffic  : udp {redirect_ip}:{os.environ['DNS_PORT']}"
     raw_warn    = "  [!] Press [Ctrl+C] at any time to safely halt server tasks"
-
+    
     # Tabby-safe layout output array
     print("\033[1;34m+" + "-" * 72 + "+")
     print(f"\033[1;36m{raw_title.ljust(72)}\033[1;34m|")
@@ -205,11 +358,15 @@ def main():
     print("\033[1;34m|                                                                        |")
     print(f"\033[1;33m{raw_warn.ljust(72)}\033[1;34m|")
     print("+" + "-" * 72 + "+\033[0m")
-    print("\033[1;32m[📡] [ChucnyServer Live Stream]: Routing networking...\033[0m\n")
+    print("\033[1;32m[📡] Routing networking...\033[0m\n")
 
 
     # DNS in a supervised background thread (auto-restarts if it ever dies)
+    
+    open_world_manager_popup()
+    
     def dns_loop():
+        
         while True:
             try:
                 dns_redirect.main()
