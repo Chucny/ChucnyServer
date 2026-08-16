@@ -7,10 +7,22 @@ client's logged layout (see rpc.py request dumps) ever disagrees, it's a
 one-line fix. The request side is parsed generically (pb.decode), so only the
 RESPONSE builders below depend on these numbers being right.
 """
+
+
+# ---------------------------------------------------------
+# CLEANED UP: library imports to top by the way :D
+
+
 import os
 import time
 import pb
 import settings as _cfg
+import struct as _struct
+import random as _random
+import hashlib as _hashlib
+import math as _math
+import s2sphere
+import world as _world
 
 # ----------------------------------------------------------- RequestEnvelope
 # (request side — VERIFIED against the real 0.29 client's raw envelope dump:
@@ -53,6 +65,15 @@ AT_EXPIRE = 2
 AT_END = 3
 _AT_MAGIC = b"U:"        # we stash the username in AuthTicket.start so it
                          # survives the client switching from token to ticket
+
+# -------------------------------------------------------------
+# Cleaned up: move variables to top to make reading the code easier
+ITEM_POKE_BALL = 1
+ITEM_GREAT_BALL = 2
+ITEM_POTION = 101
+ITEM_REVIVE = 201
+ITEM_ULTRA_BALL = 3
+ITEM_RAZZ_BERRY = 701
 
 # ------------------------------------------------------------- RequestType
 # Only the ones we are confident about; everything else is logged numerically
@@ -204,12 +225,7 @@ def build_get_player_response(username: str) -> bytes:
 #  Item{item_id=1, count=2, unseen=3}   PlayerStats{level=1, xp=2, prev=3, next=4})
 # Returning a real (non-empty) inventory clears the client's perpetual "syncing"
 # spinner, which otherwise suppresses the live map (Pokemon/PokeStops).
-ITEM_POKE_BALL = 1
-ITEM_GREAT_BALL = 2
-ITEM_POTION = 101
-ITEM_REVIVE = 201
-ITEM_ULTRA_BALL = 3
-ITEM_RAZZ_BERRY = 701
+
 
 
 def build_player_stats(level=None, xp=None) -> bytes:
@@ -479,38 +495,48 @@ def _load_real_digest():
 
 
 def _our_bundles():
-    """Every pm#### bundle on disk that also has a genuine digest entry, with the
-    REAL metadata (version/checksum/size/key). asset_id is kept == bundle_name so
-    the existing /asset/<id> download path resolves straight to the file on disk;
-    the client treats asset_id opaquely (crypto uses the per-entry key, not the id)."""
+    if not os.path.isdir(ASSETS_DIR):
+        return []
+
     digest = _load_real_digest()
-    plain = _plain_manifest() if PLAIN_ASSETS else {}
+    plain_manifest = _plain_manifest()
+    plain = plain_manifest if PLAIN_ASSETS else {}
+
     out = []
-    if os.path.isdir(ASSETS_DIR):
-        for fn in sorted(os.listdir(ASSETS_DIR)):
-            if not fn.startswith("pm") or fn not in digest:
-                continue
-            m = digest[fn]
-            if fn in plain:
-                # decrypted bytes -> no key, our own size + CRC32
-                out.append({"asset_id": fn, "bundle_name": fn, "version": m["version"],
-                            "checksum": plain[fn]["crc32"], "size": plain[fn]["size"],
-                            "key": b""})
-                continue
-            checksum = m["checksum"]
-            if CRC_FIX:
-                # The client's load path is decrypt -> ValidateBundle(CRC32) -> create.
-                # The genuine digest checksum is NOT zlib-CRC32 of the decrypted bundle
-                # (verified: no standard CRC variant matches), so if the client computes
-                # a plain CRC32 it will call every bundle corrupt and silently drop the
-                # model -- which is exactly what we see (bundle cached on device, nothing
-                # rendered). Advertise the CRC32 we actually measure instead.
-                pc = _plain_manifest().get(fn)
-                if pc:
-                    checksum = pc["crc32"]
-            out.append({"asset_id": m["asset_id"], "bundle_name": fn,
-                        "version": m["version"], "checksum": checksum,
-                        "size": m["size"], "key": m["key"]})
+    for fn in sorted(os.listdir(ASSETS_DIR)):
+        if not fn.startswith("pm") or fn not in digest:
+            continue
+
+        m = digest[fn]
+
+        # Decrypted asset path: use local plain metadata and blank key
+        if fn in plain:
+            out.append({
+                "asset_id": fn,
+                "bundle_name": fn,
+                "version": m["version"],
+                "checksum": plain[fn]["crc32"],
+                "size": plain[fn]["size"],
+                "key": b"",
+            })
+            continue
+
+        # Standard asset path: calculate CRC override if needed
+        checksum = m["checksum"]
+        if CRC_FIX:
+            pc = plain_manifest.get(fn)
+            if pc:
+                checksum = pc["crc32"]
+
+        out.append({
+            "asset_id": m["asset_id"],
+            "bundle_name": fn,
+            "version": m["version"],
+            "checksum": checksum,
+            "size": m["size"],
+            "key": m["key"],
+        })
+
     return out
 
 
@@ -596,12 +622,7 @@ def build_item_template(template_id: str, body: bytes = b"") -> bytes:
 
 
 # ------------------------------------------------------------- GET_MAP_OBJECTS
-import struct as _struct
-import random as _random
-import hashlib as _hashlib
-import math as _math
-import s2sphere
-import world as _world
+
 
 
 def _hex_id(seed, n=32):
@@ -2345,307 +2366,332 @@ def _l17_centres(cid15):
     return got
 
 
-def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
-    # GetMapObjectsResponse { map_cells=1, status=2 (1=SUCCESS), time_of_day=3 (1=DAY) }
-    now = int(time.time() * 1000)
-    # Everything in this batch belongs to the current spawn window and dies with it,
-    # so the client's timers agree with when we actually re-roll.
-    _win, _win_end = _window(now)
-    expire = _win_end
-    SPAWN_MS = max(60_000, _win_end - now)
-    have_fix = abs(lat) > 1e-6 or abs(lng) > 1e-6
+import math as _math
+import random as _random
+import time
+import s2sphere
 
-    # Answer with EXACTLY the cells the client asked for, in the SAME ORDER. The
-    # client pairs cell_id[i] with since_timestamp_ms[i] in its request, so it treats
-    # the response cell list positionally -- re-sorting them or appending extra cells
-    # (which we used to do) desynchronises that mapping and the client silently drops
-    # the whole batch. Only synthesise cells if it asked for none.
-    cells = list(dict.fromkeys(cell_ids))          # requested cells (dedup, in order)
+
+class SpawnBatch:
+    def __init__(self, now, expire, spawn_ms):
+        self.now = now
+        self.expire = expire
+        self.spawn_ms = spawn_ms
+        self.catch = []
+        self.forts = []
+        self.wild = []
+        self.spawns = []
+        self.nearby = []
+
+    def add_spawn(self, eid, sid, pid, cp, lat, lng, nearby_dist, expire_override=None):
+        exp = expire_override if expire_override is not None else self.expire
+        sp_ms = max(60_000, exp - self.now) if expire_override is not None else self.spawn_ms
+
+        self.wild.append(build_wild_pokemon(eid, lat, lng, sid, pid, self.now, sp_ms, cp=cp))
+        self.catch.append(build_map_pokemon(sid, eid, pid, lat, lng, exp))
+        _world.remember_spawn(eid, pid, lat, lng, cp, sid, exp)
+        self.spawns.append(build_spawn_point(lat, lng))
+        self.nearby.append(build_nearby_pokemon(pid, nearby_dist))
+
+
+def _resolve_cells(cell_ids, lat, lng, have_fix):
+    cells = list(dict.fromkeys(cell_ids))
     if not cells and have_fix:
-        pc = s2sphere.CellId.from_lat_lng(
-            s2sphere.LatLng.from_degrees(lat, lng)).parent(15)
+        pc = s2sphere.CellId.from_lat_lng(s2sphere.LatLng.from_degrees(lat, lng)).parent(15)
         cells = [pc.id()]
         try:
             cells += [n.id() for n in pc.get_edge_neighbors()]
         except Exception:
             pass
+    return cells
 
-    # Which of the REQUESTED cells holds the player (that's where the dense cluster
-    # goes). Prefer the exact level-15 parent; fall back to the nearest requested cell
-    # so the trainer always has Pokemon at their feet even if the client's cell list
-    # lags behind the GPS.
-    player_cell = None
-    if have_fix and cells:
-        pid_cell = s2sphere.CellId.from_lat_lng(
-            s2sphere.LatLng.from_degrees(lat, lng)).parent(15).id()
-        if pid_cell in cells:
-            player_cell = pid_cell
+
+def _find_player_cell(cells, lat, lng, have_fix):
+    if not (have_fix and cells):
+        return None
+    pid_cell = s2sphere.CellId.from_lat_lng(s2sphere.LatLng.from_degrees(lat, lng)).parent(15).id()
+    if pid_cell in cells:
+        return pid_cell
+
+    def _cdist(cid):
+        c = _cell_center(cid)
+        return (c[0] - lat) ** 2 + (c[1] - lng) ** 2 if c else 9e9
+
+    return min(cells, key=_cdist)
+
+
+def _calculate_budgets(cells, lat, lng, max_wild, per_cell):
+    if not cells:
+        return {}
+
+    def _cdist(cid):
+        c = _cell_center(cid)
+        return (c[0] - lat) ** 2 + (c[1] - lng) ** 2 if c else 9e9
+
+    ranked = sorted(cells, key=_cdist)
+    budget = {}
+    left = max_wild
+    for rank, cid in enumerate(ranked):
+        if rank == 0:
+            share = per_cell
+        elif rank <= 4:
+            share = max(1, per_cell // 2)
         else:
-            def _cdist(cid):
-                c = _cell_center(cid)
-                return (c[0] - lat) ** 2 + (c[1] - lng) ** 2 if c else 9e9
-            player_cell = min(cells, key=_cdist)
+            share = max(1, per_cell // 4)
+        share = min(share, max(0, left))
+        budget[cid] = share
+        left -= share
+    return budget
 
-    # Per-request safety caps: the density settings are PER CELL and the client
-    # asks for several cells at once, so a generous value multiplies quickly.
-    # Without a ceiling one refresh can build a batch the client drops outright.
-    MAX_FORTS = max(1, _cfg.get("pokestops", "max_per_request", cast=int))
-    MAX_WILD = max(1, _cfg.get("spawns", "max_per_request", cast=int))
-    _per_cell = max(0, _cfg.get("spawns", "per_l15_cell", cast=int))
 
-    # live event settings drive species / CP / how many spawn around the trainer
-    _ev = _event_cfg()
-    _near_n = max(0, min(60, int(_ev.get("spawn_density", _near_player()))))
-
-    # Hand-placed objects from the World Manager (places.json), bucketed by the
-    # level-15 cell they fall in so they only ship with the cell that owns them.
+def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
     import places as _places
-    _pl = _places.get()
-    _placed_forts, _placed_spawns = {}, {}
-    for _f in _pl["forts"]:
+
+    now = int(time.time() * 1000)
+    _win, win_end = _window(now)
+    spawn_ms = max(60_000, win_end - now)
+    have_fix = abs(lat) > 1e-6 or abs(lng) > 1e-6
+
+    cells = _resolve_cells(cell_ids, lat, lng, have_fix)
+    player_cell = _find_player_cell(cells, lat, lng, have_fix)
+
+    max_forts = max(1, _cfg.get("pokestops", "max_per_request", cast=int))
+    max_wild = max(1, _cfg.get("spawns", "max_per_request", cast=int))
+    per_cell = max(0, _cfg.get("spawns", "per_l15_cell", cast=int))
+
+    ev = _event_cfg()
+    near_n = max(0, min(60, int(ev.get("spawn_density", _near_player()))))
+
+    pl = _places.get()
+    proc_forts = pl.get("procedural_forts")
+    proc_spawns = pl.get("procedural_spawns")
+
+    placed_forts, placed_spawns = {}, {}
+    for f in pl["forts"]:
         try:
-            _c = s2sphere.CellId.from_lat_lng(
-                s2sphere.LatLng.from_degrees(_f["lat"], _f["lng"])).parent(15).id()
+            c = s2sphere.CellId.from_lat_lng(s2sphere.LatLng.from_degrees(f["lat"], f["lng"])).parent(15).id()
+            placed_forts.setdefault(c, []).append(f)
         except Exception:
             continue
-        _placed_forts.setdefault(_c, []).append(_f)
-    for _s in _pl["spawns"]:
+    for s in pl["spawns"]:
         try:
-            _c = s2sphere.CellId.from_lat_lng(
-                s2sphere.LatLng.from_degrees(_s["lat"], _s["lng"])).parent(15).id()
+            c = s2sphere.CellId.from_lat_lng(s2sphere.LatLng.from_degrees(s["lat"], s["lng"])).parent(15).id()
+            placed_spawns.setdefault(c, []).append(s)
         except Exception:
             continue
-        _placed_spawns.setdefault(_c, []).append(_s)
-    _proc_forts = _pl["procedural_forts"]
-    _proc_spawns = _pl["procedural_spawns"]
 
-    # Lured stops, and where each fort sits, so the lure cluster lands on it.
-    _lured = _world.lured_forts()
-    _fort_pos = {}
-    for _f in _pl["forts"]:
-        _gym = _f.get("kind") == "gym"
-        _fort_pos[f"{_hex_id(_f['id'])}.{16 if _gym else 11}"] = (_f["lat"], _f["lng"])
-    if _lured:
-        for _cid2 in cells:
-            for _kid, _kla, _kln in _l17_centres(_cid2):
-                _fort_pos.setdefault(f"{_hex_id(_kid)}.11", (_kla, _kln))
+    lured = _world.lured_forts()
+    fort_pos = {}
+    for f in pl["forts"]:
+        gym = f.get("kind") == "gym"
+        fort_pos[f"{_hex_id(f['id'])}.{16 if gym else 11}"] = (f["lat"], f["lng"])
+    if lured:
+        for cid in cells:
+            for kid, kla, kln in _l17_centres(cid):
+                fort_pos.setdefault(f"{_hex_id(kid)}.11", (kla, kln))
 
-    def _cell_of(la, ln):
-        try:
-            return s2sphere.CellId.from_lat_lng(
-                s2sphere.LatLng.from_degrees(la, ln)).parent(15).id()
-        except Exception:
-            return None
-
-    # Spread the wild-Pokemon budget by DISTANCE. Filling far-away cells first
-    # and then hitting the cap left the player surrounded by nothing, and handing
-    # the client 180+ Pokemon at once is what makes a 2016 phone fall over. The
-    # cells you can actually walk to get the full density; the rest get a taste.
-    _budget = {}
-    if cells:
-        def _cdist2(cid):
-            c = _cell_center(cid)
-            return ((c[0] - lat) ** 2 + (c[1] - lng) ** 2) if c else 9e9
-        _ranked = sorted(cells, key=_cdist2)
-        _left = MAX_WILD
-        for _rank, _cid3 in enumerate(_ranked):
-            if _rank == 0:
-                _share = _per_cell                       # the cell you stand in
-            elif _rank <= 4:
-                _share = max(1, _per_cell // 2)          # the ring around you
-            else:
-                _share = max(1, _per_cell // 4)          # distant scenery
-            _share = min(_share, max(0, _left))
-            _budget[_cid3] = _share
-            _left -= _share
+    budgets = _calculate_budgets(cells, lat, lng, max_wild, per_cell)
 
     w = pb.Writer()
     spawned = forts_n = wild_n = 0
+
     for cid in cells:
-        catch, forts, wild, spawns, nearby = [], [], [], [], []
+        batch = SpawnBatch(now, win_end, spawn_ms)
         ctr = _cell_center(cid)
-        if ctr and _proc_spawns and wild_n < MAX_WILD:
-            # Wild Pokemon in EVERY level-17 child of this cell (16 of them), rather
-            # than one at the level-15 centre. Seeded per (l17 cell, index, window)
-            # so the map is stable for the whole window and re-rolls with it.
-            _kids = _l17_centres(cid)
-            for k in range(_budget.get(cid, 0)):
-                if wild_n >= MAX_WILD or not _kids:
+
+        # Procedural wild spawns
+        if ctr and proc_spawns and wild_n < max_wild:
+            kids = _l17_centres(cid)
+            for k in range(budgets.get(cid, 0)):
+                if wild_n >= max_wild or not kids:
                     break
-                # Spread them over the level-15 cell by walking its level-17
-                # children in turn, then jittering inside whichever one we land on.
-                _kid, _clat, _clng = _kids[k % len(_kids)]
-                seed = (_kid ^ (_win * 0x9E3779B97F4A7C15)
-                        ^ (k * 0x2545F4914F6CDD1D)) & ((1 << 63) - 1)
+                kid, clat, clng = kids[k % len(kids)]
+                seed = (kid ^ (_win * 0x9E3779B97F4A7C15) ^ (k * 0x2545F4914F6CDD1D)) & ((1 << 63) - 1)
                 rnd = _random.Random(seed)
-                pid = _pick_species(rnd, _ev)
                 eid = (seed ^ 0x5BD1E995ABCD) & ((1 << 63) - 1)
-                sid = _hex_id((_kid, k), 11)
-                _cp = _pick_cp(rnd, _ev)
-                # scatter inside the level-17 cell (~75m across) so they don't sit
-                # in a visible grid as you walk
-                jl = _clat + (rnd.random() - 0.5) * 0.00060
-                jn = _clng + (rnd.random() - 0.5) * 0.00060
-                # skip it if it was already caught during this window, otherwise
-                # the next map refresh hands the same Pokemon straight back
                 if _world.is_despawned(eid):
                     continue
-                wild.append(build_wild_pokemon(eid, jl, jn, sid, pid, now,
-                                               SPAWN_MS, cp=_cp))
-                catch.append(build_map_pokemon(sid, eid, pid, jl, jn, expire))
-                _world.remember_spawn(eid, pid, jl, jn, _cp, sid, expire)
-                spawns.append(build_spawn_point(jl, jn))
-                nearby.append(build_nearby_pokemon(pid, 120.0))
+                jl = clat + (rnd.random() - 0.5) * 0.00060
+                jn = clng + (rnd.random() - 0.5) * 0.00060
+                batch.add_spawn(
+                    eid=eid,
+                    sid=_hex_id((kid, k), 11),
+                    pid=_pick_species(rnd, ev),
+                    cp=_pick_cp(rnd, ev),
+                    lat=jl,
+                    lng=jn,
+                    nearby_dist=120.0,
+                )
                 wild_n += 1
-        if cid == player_cell and _proc_spawns:
-            # a cluster of wild Pokemon right around the trainer (spread within ~65m)
-            # so there are always plenty in view no matter which way you look
-            for k in range(_near_n):
-                r = _random.Random(cid ^ (_win * 0x9E3779B97F4A7C15)
-                                    ^ (k * 0x2545F4914F6CDD1D))
-                pid2 = _pick_species(r, _ev)
-                # Spread them around the trainer instead of stacking them on the
-                # same spot: each one gets its own angular slice, at 25-65m. That
-                # keeps them inside MapSettings.pokemon_visible_range (~70m) while
-                # leaving real walking distance between them.
-                ang = (2 * _math.pi * k / max(1, _near_n)) + r.uniform(-0.35, 0.35)
-                _d0 = _cfg.get("spawns", "nearest_distance_m", cast=float)
-                _d1 = _cfg.get("spawns", "farthest_distance_m", cast=float)
-                dist = _d0 + r.random() * max(1.0, _d1 - _d0)     # metres
+
+        # Trainer cluster spawns
+        if cid == player_cell and proc_spawns:
+            d0 = _cfg.get("spawns", "nearest_distance_m", cast=float)
+            d1 = _cfg.get("spawns", "farthest_distance_m", cast=float)
+            for k in range(near_n):
+                r = _random.Random(cid ^ (_win * 0x9E3779B97F4A7C15) ^ (k * 0x2545F4914F6CDD1D))
+                eid2 = (cid ^ (0x1234ABCD5678 + k * 0x9E3779B1) ^ (_win * 0x85EBCA6B)) & ((1 << 63) - 1)
+                if _world.is_despawned(eid2):
+                    continue
+                ang = (2 * _math.pi * k / max(1, near_n)) + r.uniform(-0.35, 0.35)
+                dist = d0 + r.random() * max(1.0, d1 - d0)
                 dlat = lat + (dist * _math.cos(ang)) / 111320.0
                 dlng = lng + (dist * _math.sin(ang)) / (
-                    111320.0 * max(0.2, _math.cos(_math.radians(lat))))
-                eid2 = (cid ^ (0x1234ABCD5678 + k * 0x9E3779B1)
-                        ^ (_win * 0x85EBCA6B)) & ((1 << 63) - 1)
-                sid2 = _hex_id((cid, k), 11)
-                _cp2 = _pick_cp(r, _ev)
-                if _world.is_despawned(eid2):   # already caught in this window
-                    continue
-                wild.append(build_wild_pokemon(eid2, dlat, dlng, sid2, pid2, now,
-                                               SPAWN_MS, cp=_cp2))
-                catch.append(build_map_pokemon(sid2, eid2, pid2, dlat, dlng, expire))
-                _world.remember_spawn(eid2, pid2, dlat, dlng, _cp2, sid2, expire)
-                spawns.append(build_spawn_point(dlat, dlng))
-                nearby.append(build_nearby_pokemon(pid2, 10.0 + k * 5))
-        if _proc_forts and forts_n < MAX_FORTS:
-            forts = l17_forts(cid, now)[:max(0, MAX_FORTS - forts_n)]
-            forts_n += len(forts)
-        if cid == player_cell and _proc_forts:
-            # PokeStops at level-17 cell centres can land 100-150m away, well outside
-            # the ~40m spin radius -- they draw on the map but stay grey/unspinnable.
-            # Anchor a couple right next to the trainer (POGOServer does exactly this:
-            # lat+0.0002, lng-0.0001 ~= 22m). ~0.00009 deg ~= 10m.
-            near = [(0.00020, -0.00010, False),    # PokeStop ~24m NW
-                    (-0.00012, 0.00016, False),    # PokeStop ~22m SE
-                    (0.00025, 0.00028, True)]      # Gym ~40m NE
+                    111320.0 * max(0.2, _math.cos(_math.radians(lat)))
+                )
+                batch.add_spawn(
+                    eid=eid2,
+                    sid=_hex_id((cid, k), 11),
+                    pid=_pick_species(r, ev),
+                    cp=_pick_cp(r, ev),
+                    lat=dlat,
+                    lng=dlng,
+                    nearby_dist=10.0 + k * 5,
+                )
+
+        # Procedural forts
+        if proc_forts and forts_n < max_forts:
+            batch.forts = l17_forts(cid, now)[: max(0, max_forts - forts_n)]
+            forts_n += len(batch.forts)
+
+        if cid == player_cell and proc_forts:
+            near = [(0.00020, -0.00010, False), (-0.00012, 0.00016, False), (0.00025, 0.00028, True)]
             for j, (dla, dln, is_gym) in enumerate(near):
                 fid = f"{_hex_id((cid, 'near', j))}.{16 if is_gym else 11}"
-                forts = list(forts) + [build_fort(fid, lat + dla, lng + dln,
-                                                  now, is_gym=is_gym)]
+                batch.forts.append(build_fort(fid, lat + dla, lng + dln, now, is_gym=is_gym))
             forts_n += len(near)
-        # --- hand-placed objects from the World Manager -------------------
-        for _f in _placed_forts.get(cid, []):
-            _gym = _f.get("kind") == "gym"
-            forts = list(forts) + [build_fort(
-                f"{_hex_id(_f['id'])}.{16 if _gym else 11}",
-                _f["lat"], _f["lng"], now, is_gym=_gym)]
-            _fid = f"{_hex_id(_f['id'])}.{16 if _gym else 11}"
-            _PLACED_NAMES[_fid] = _f.get("name", "")
-            if _f.get("image"):
-                _PLACED_IMAGES[_fid] = _f["image"]
-            forts_n += 1
-        for _s in _placed_spawns.get(cid, []):
-            _pid = int(_s.get("pokemon_id", 0) or 0)
-            if _pid == 0:                      # "random spawn point"
-                _pid = _pick_species(_random.Random(now // 600000 ^ hash(_s["id"])), _ev)
-            _eid = (hash(_s["id"]) ^ 0x50AC3D) & ((1 << 62) - 1)
-            _sid = _hex_id(_s["id"], 11)
-            _pcp = 200 + (_eid % 800)
-            wild.append(build_wild_pokemon(_eid, _s["lat"], _s["lng"], _sid, _pid,
-                                           now, SPAWN_MS, cp=_pcp))
-            catch.append(build_map_pokemon(_sid, _eid, _pid, _s["lat"], _s["lng"], expire))
-            _world.remember_spawn(_eid, _pid, _s["lat"], _s["lng"], _pcp, _sid, expire)
-            spawns.append(build_spawn_point(_s["lat"], _s["lng"]))
-            nearby.append(build_nearby_pokemon(_pid, 20.0))
 
-        # Incense: more wild Pokemon around the trainer while it burns.
-        if cid == player_cell and _proc_spawns and _world.item_active(401):
-            _n = _cfg.get("boosts", "incense_extra_spawns", cast=int)
-            for k in range(_n):
-                r = _random.Random((cid ^ (_win * 0x9E3779B1) ^ (k * 0x51ED2701)
-                                    ^ 0x1CE45E) & 0x7FFFFFFF)
-                ang = 2 * _math.pi * k / max(1, _n) + r.uniform(-0.3, 0.3)
-                dist = 18.0 + r.random() * 40.0
-                dl = lat + (dist * _math.cos(ang)) / 111320.0
-                dn = lng + (dist * _math.sin(ang)) / (
-                    111320.0 * max(0.2, _math.cos(_math.radians(lat))))
+        # Placed objects
+        for f in placed_forts.get(cid, []):
+            gym = f.get("kind") == "gym"
+            fid = f"{_hex_id(f['id'])}.{16 if gym else 11}"
+            batch.forts.append(build_fort(fid, f["lat"], f["lng"], now, is_gym=gym))
+            _PLACED_NAMES[fid] = f.get("name", "")
+            if f.get("image"):
+                _PLACED_IMAGES[fid] = f["image"]
+            forts_n += 1
+
+        for s in placed_spawns.get(cid, []):
+            pid = int(s.get("pokemon_id", 0) or 0)
+            if pid == 0:
+                pid = _pick_species(_random.Random(now // 600000 ^ hash(s["id"])), ev)
+            eid = (hash(s["id"]) ^ 0x50AC3D) & ((1 << 62) - 1)
+            batch.add_spawn(
+                eid=eid,
+                sid=_hex_id(s["id"], 11),
+                pid=pid,
+                cp=200 + (eid % 800),
+                lat=s["lat"],
+                lng=s["lng"],
+                nearby_dist=20.0,
+            )
+
+        # Incense
+        if cid == player_cell and proc_spawns and _world.item_active(401):
+            n = _cfg.get("boosts", "incense_extra_spawns", cast=int)
+            for k in range(n):
+                r = _random.Random(
+                    (cid ^ (_win * 0x9E3779B1) ^ (k * 0x51ED2701) ^ 0x1CE45E) & 0x7FFFFFFF
+                )
                 eid = (cid ^ 0x1CE45E ^ (k * 0x9E3779B1) ^ (_win * 0x85EBCA6B)) & ((1 << 62) - 1)
                 if _world.is_despawned(eid):
                     continue
-                pid = _pick_species(r, _ev)
-                cp = _pick_cp(r, _ev)
-                sid = _hex_id((eid, "inc"), 11)
-                wild.append(build_wild_pokemon(eid, dl, dn, sid, pid, now, SPAWN_MS, cp=cp))
-                catch.append(build_map_pokemon(sid, eid, pid, dl, dn, expire))
-                _world.remember_spawn(eid, pid, dl, dn, cp, sid, expire)
-                spawns.append(build_spawn_point(dl, dn))
-                nearby.append(build_nearby_pokemon(pid, 15.0))
+                ang = 2 * _math.pi * k / max(1, n) + r.uniform(-0.3, 0.3)
+                dist = 18.0 + r.random() * 40.0
+                dl = lat + (dist * _math.cos(ang)) / 111320.0
+                dn = lng + (dist * _math.sin(ang)) / (
+                    111320.0 * max(0.2, _math.cos(_math.radians(lat)))
+                )
+                batch.add_spawn(
+                    eid=eid,
+                    sid=_hex_id((eid, "inc"), 11),
+                    pid=_pick_species(r, ev),
+                    cp=_pick_cp(r, ev),
+                    lat=dl,
+                    lng=dn,
+                    nearby_dist=15.0,
+                )
 
-        # Lures: extra Pokemon clustered on any lured stop in this cell.
-        if _proc_spawns:
-            for _lf, _lm in _lured.items():
-                _pos = _fort_pos.get(_lf)
-                if not _pos or _cell_of(_pos[0], _pos[1]) != cid:
+        # Lures
+        if proc_spawns:
+            for lf, lm in lured.items():
+                pos = fort_pos.get(lf)
+                if not pos:
                     continue
-                _n = _cfg.get("boosts", "lure_extra_spawns", cast=int)
-                for k in range(_n):
-                    r = _random.Random((hash(_lf) ^ (_win * 0x9E3779B1)
-                                        ^ (k * 0x2545F491)) & 0x7FFFFFFF)
-                    ang = 2 * _math.pi * k / max(1, _n) + r.uniform(-0.4, 0.4)
-                    dist = 8.0 + r.random() * 22.0
-                    dl = _pos[0] + (dist * _math.cos(ang)) / 111320.0
-                    dn = _pos[1] + (dist * _math.sin(ang)) / (
-                        111320.0 * max(0.2, _math.cos(_math.radians(_pos[0]))))
-                    eid = (hash(_lf) ^ 0x1D4E ^ (k * 0x9E3779B1)
-                           ^ (_win * 0x85EBCA6B)) & ((1 << 62) - 1)
+                try:
+                    c_id = s2sphere.CellId.from_lat_lng(
+                        s2sphere.LatLng.from_degrees(pos[0], pos[1])
+                    ).parent(15).id()
+                except Exception:
+                    c_id = None
+                if c_id != cid:
+                    continue
+
+                n = _cfg.get("boosts", "lure_extra_spawns", cast=int)
+                for k in range(n):
+                    r = _random.Random(
+                        (hash(lf) ^ (_win * 0x9E3779B1) ^ (k * 0x2545F491)) & 0x7FFFFFFF
+                    )
+                    eid = (hash(lf) ^ 0x1D4E ^ (k * 0x9E3779B1) ^ (_win * 0x85EBCA6B)) & (
+                        (1 << 62) - 1
+                    )
                     if _world.is_despawned(eid):
                         continue
-                    pid = _pick_species(r, _ev)
-                    cp = _pick_cp(r, _ev)
-                    sid = _hex_id((eid, "lure"), 11)
-                    wild.append(build_wild_pokemon(eid, dl, dn, sid, pid, now, SPAWN_MS, cp=cp))
-                    catch.append(build_map_pokemon(sid, eid, pid, dl, dn, expire))
-                    _world.remember_spawn(eid, pid, dl, dn, cp, sid, expire)
-                    spawns.append(build_spawn_point(dl, dn))
-                    nearby.append(build_nearby_pokemon(pid, 12.0))
+                    ang = 2 * _math.pi * k / max(1, n) + r.uniform(-0.4, 0.4)
+                    dist = 8.0 + r.random() * 22.0
+                    dl = pos[0] + (dist * _math.cos(ang)) / 111320.0
+                    dn = pos[1] + (dist * _math.sin(ang)) / (
+                        111320.0 * max(0.2, _math.cos(_math.radians(pos[0])))
+                    )
+                    batch.add_spawn(
+                        eid=eid,
+                        sid=_hex_id((eid, "lure"), 11),
+                        pid=_pick_species(r, ev),
+                        cp=_pick_cp(r, ev),
+                        lat=dl,
+                        lng=dn,
+                        nearby_dist=12.0,
+                    )
 
-        # A defeated raid boss waiting at the trainer's feet (their cell only).
+        # Raid bonus spawns
         if cid == player_cell:
-            for _b in _world.bonus_spawns(_world.current().username):
-                if _world.is_despawned(_b["eid"]):
+            for b in _world.bonus_spawns(_world.current().username):
+                if _world.is_despawned(b["eid"]):
                     continue
-                _bsid = _hex_id((_b["eid"], "raid"), 11)
-                wild.append(build_wild_pokemon(_b["eid"], _b["lat"], _b["lng"],
-                                               _bsid, _b["pid"], now,
-                                               max(60_000, _b["expires_ms"] - now),
-                                               cp=_b["cp"]))
-                catch.append(build_map_pokemon(_bsid, _b["eid"], _b["pid"],
-                                               _b["lat"], _b["lng"], _b["expires_ms"]))
-                _world.remember_spawn(_b["eid"], _b["pid"], _b["lat"], _b["lng"],
-                                      _b["cp"], _bsid, _b["expires_ms"])
-                spawns.append(build_spawn_point(_b["lat"], _b["lng"]))
-                nearby.append(build_nearby_pokemon(_b["pid"], 5.0))
+                bsid = _hex_id((b["eid"], "raid"), 11)
+                batch.add_spawn(
+                    eid=b["eid"],
+                    sid=bsid,
+                    pid=b["pid"],
+                    cp=b["cp"],
+                    lat=b["lat"],
+                    lng=b["lng"],
+                    nearby_dist=5.0,
+                    expire_override=b["expires_ms"],
+                )
 
-        spawned += len(wild)
-        w.message(1, build_map_cell(cid, now, catch, forts, wild,
-                                    spawn_points=spawns, nearby=nearby))
-    w.uint(2, 1).uint(3, 1)   # status=SUCCESS, time_of_day=DAY
-    # NOTE: POGOServer (0.35) omits time_of_day, but the 0.29 client defaults to
-    # NIGHT without it -- the encounter screen renders black. Keep sending DAY.
+        spawned += len(batch.wild)
+        w.message(
+            1,
+            build_map_cell(
+                cid,
+                now,
+                batch.catch,
+                batch.forts,
+                batch.wild,
+                spawn_points=batch.spawns,
+                nearby=batch.nearby,
+            ),
+        )
+
+    w.uint(2, 1).uint(3, 1)
     tag = "real fix -> spawns at player" if have_fix else "NO-GPS-FIX (0,0)"
-    print(f"   [map] {len(cell_ids)} req cells, {len(cells)} sent; "
-          f"player ({lat:.5f},{lng:.5f}) [{tag}]; "
-          f"{spawned} mons, {forts_n} stops/gyms", flush=True)
+    print(
+        f"   [map] {len(cell_ids)} req cells, {len(cells)} sent; "
+        f"player ({lat:.5f},{lng:.5f}) [{tag}]; "
+        f"{spawned} mons, {forts_n} stops/gyms",
+        flush=True,
+    )
     return w.to_bytes()
 
 
