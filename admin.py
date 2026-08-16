@@ -1,30 +1,30 @@
 """
 "World Manager" -- local web UI for the PoGO private server.
 
-Runs on http://127.0.0.1:<port> (localhost only, never exposed to the phone or the
-network). Lets you click a map to place PokeStops, Gyms and Pokemon spawns at real
-coordinates, and tune the global spawn settings. Everything is written to
-places.json / events.json, which the game server hot-reloads on the next map
-refresh -- no restart needed.
-
-The map tiles come from OpenStreetMap, so this page needs internet; the placement
-controls and the coordinate list still work fine offline.
+Runs on http://127.0.0.1:<port> (localhost only). Allows setting PokeStops,
+Gyms, and Pokemon spawns at real coordinates and adjusting global spawn settings.
+Writes to places.json / events.json for server hot-reloading.
 """
+
 import json
 import threading
+import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import events as EV
 import places as PL
 
-# Items you can hand yourself from the Shop panel (id -> label).
-GIVEABLE = [(1, "Poke Ball"), (2, "Great Ball"), (3, "Ultra Ball"),
-            (101, "Potion"), (102, "Super Potion"), (103, "Hyper Potion"),
-            (104, "Max Potion"), (201, "Revive"), (202, "Max Revive"),
-            (701, "Razz Berry"), (401, "Incense"), (301, "Lucky Egg"),
-            (501, "Lure Module"), (902, "Egg Incubator")]
+# Items available in the Shop panel (id -> label)
+GIVEABLE = [
+    (1, "Poke Ball"), (2, "Great Ball"), (3, "Ultra Ball"),
+    (101, "Potion"), (102, "Super Potion"), (103, "Hyper Potion"),
+    (104, "Max Potion"), (201, "Revive"), (202, "Max Revive"),
+    (701, "Razz Berry"), (401, "Incense"), (301, "Lucky Egg"),
+    (501, "Lure Module"), (902, "Egg Incubator")
+]
 
-# The shop, at the real 2016 PokeCoin prices. (sku, label, item_id, count, price)
+# Shop inventory with 2016 prices (sku, label, item_id, count, price)
 SHOP = [
     ("pokeball.20",   "20 x Poke Ball",     1,  20,  100),
     ("pokeball.100",  "100 x Poke Ball",    1, 100,  460),
@@ -363,6 +363,22 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
     </div>
 
     <div class="card">
+      <div class="card-title">Import High-Density POIs</div>
+      <div class="controls-row">
+        <input id="poi-lat" type="number" step="any" placeholder="Lat (e.g. 44.55678)" style="width: 130px">
+        <input id="poi-lng" type="number" step="any" placeholder="Lng (e.g. -49.0071)" style="width: 130px">
+        <input id="poi-r" type="number" value="3" min="0.1" max="50" step="0.1" style="width: 70px" title="Radius km">
+        <span style="font-size:13px; color:var(--text-muted)">km radius</span>
+        <button class="btn-primary" onclick="importPois()">Import POIs</button>
+      </div>
+      <div class="hint" id="poihint">Imports nodes, ways, and relations from OSM including parks, art, and transit stops.</div>
+    </div>
+
+  </div>
+
+  <div class="grid-2">
+
+    <div class="card">
       <div class="card-title">Raid Boss Management</div>
       <div class="controls-row" style="margin-bottom: 8px;">
         <button onclick="raidToggle()" id="b-raid">Raid: OFF</button>
@@ -373,10 +389,6 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
       </div>
       <div class="hint" id="raidhint">Spawns a raid boss defending every gym across the server.</div>
     </div>
-
-  </div>
-
-  <div class="grid-2">
 
     <div class="card">
       <div class="card-title">Shop &amp; Storage Upgrades</div>
@@ -389,6 +401,10 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
       <div class="hint" id="shophint">Buy items using PokeCoins earned by defending Gyms.</div>
       <div class="hint" id="buyhint"></div>
     </div>
+
+  </div>
+
+  <div class="grid-2">
 
     <div class="card">
       <div class="card-title">Player Rewards &amp; Password Reset</div>
@@ -415,26 +431,26 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
       <div class="hint" id="givehint"></div>
     </div>
 
-  </div>
-
-  <div class="card">
-    <div class="card-title">Event &amp; Global Spawn Controls</div>
-    <div class="controls-row" id="presets" style="margin-bottom: 12px;"></div>
-    <div class="controls-row">
-      <input id="ev-name" placeholder="Event Name" size="12">
-      <label style="font-size:13px; color:var(--text-muted)">Density: <input id="ev-density" type="number" min="0" max="60" style="width: 60px"></label>
-      <select id="ev-mode">
-        <option value="all">All 151</option>
-        <option value="list">From List</option>
-        <option value="single">Single Species</option>
-      </select>
-      <input id="ev-list" placeholder="1,4,7,25" size="10">
-      <label style="font-size:13px; color:var(--text-muted)">CP Range: 
-        <input id="ev-min" type="number" min="10" max="5000" style="width: 70px"> - 
-        <input id="ev-max" type="number" min="10" max="5000" style="width: 70px">
-      </label>
-      <button class="btn-primary" onclick="saveEv()">Apply Event Config</button>
+    <div class="card">
+      <div class="card-title">Event &amp; Global Spawn Controls</div>
+      <div class="controls-row" id="presets" style="margin-bottom: 12px;"></div>
+      <div class="controls-row">
+        <input id="ev-name" placeholder="Event Name" size="12">
+        <label style="font-size:13px; color:var(--text-muted)">Density: <input id="ev-density" type="number" min="0" max="60" style="width: 60px"></label>
+        <select id="ev-mode">
+          <option value="all">All 151</option>
+          <option value="list">From List</option>
+          <option value="single">Single Species</option>
+        </select>
+        <input id="ev-list" placeholder="1,4,7,25" size="10">
+        <label style="font-size:13px; color:var(--text-muted)">CP Range: 
+          <input id="ev-min" type="number" min="10" max="5000" style="width: 70px"> - 
+          <input id="ev-max" type="number" min="10" max="5000" style="width: 70px">
+        </label>
+        <button class="btn-primary" onclick="saveEv()">Apply Event Config</button>
+      </div>
     </div>
+
   </div>
 
   <div class="grid-2">
@@ -468,6 +484,16 @@ async function ring(){
   if(!player.lat){alert('No trainer position available - open the game first or click the map.');return;}
   await post('/api/ring',{lat:player.lat,lng:player.lng,count:+$('ring-n').value,
     radius_m:+$('ring-r').value,gym:true});
+  load();
+}
+async function importPois(){
+  const lat = parseFloat($('poi-lat').value || player.lat);
+  const lng = parseFloat($('poi-lng').value || player.lng);
+  const r_km = parseFloat($('poi-r').value || 3);
+  if(!lat || !lng){alert('Please enter latitude and longitude.'); return;}
+  $('poihint').textContent = 'Fetching high-density POIs from OpenStreetMap...';
+  const r = await post('/api/fetch_pois', {lat: lat, lng: lng, radius_km: r_km});
+  $('poihint').textContent = r.message || ('Imported ' + r.placed + ' PokeStops.');
   load();
 }
 async function saveEv(){
@@ -652,6 +678,72 @@ load(); loadNoms(); setInterval(load, 15000); setInterval(loadNoms, 20000);
 </script></body></html>"""
 
 
+
+
+
+def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit: int = 500) -> int:
+    """Broadly queries OpenStreetMap via Overpass API for nodes, ways, and relations,
+
+    extracting features (parks, art, transport, amenities) and photos.
+    """
+    query = f"""
+    [out:json][timeout:35];
+    (
+      nwr(around:{radius_m},{lat},{lng})["amenity"];
+      nwr(around:{radius_m},{lat},{lng})["leisure"];
+      nwr(around:{radius_m},{lat},{lng})["tourism"];
+      nwr(around:{radius_m},{lat},{lng})["historic"];
+      nwr(around:{radius_m},{lat},{lng})["shop"];
+      nwr(around:{radius_m},{lat},{lng})["man_made"];
+      nwr(around:{radius_m},{lat},{lng})["highway"="bus_stop"];
+    );
+    out center {limit};
+    """
+    url = "https://overpass-api.de/api/interpreter"
+    data = urllib.parse.urlencode({"data": query}).encode("utf-8")
+    req = urllib.request.Request(url, data=data, headers={"User-Agent": "PoGOServer/1.0"})
+
+    try:
+        with urllib.request.urlopen(req, timeout=35) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return 0
+
+    placed = 0
+    for elem in payload.get("elements", []):
+        tags = elem.get("tags", {})
+
+        # Nodes have lat/lon; ways and relations return center coords via 'out center'
+        n_lat = elem.get("lat") or elem.get("center", {}).get("lat")
+        n_lng = elem.get("lon") or elem.get("center", {}).get("lon")
+
+        if n_lat is None or n_lng is None:
+            continue
+
+        # Extract name or synthesize a recognizable tag description if no name is specified
+        name = tags.get("name")
+        if not name:
+            name_parts = [
+                tags.get("amenity"), tags.get("leisure"), tags.get("tourism"),
+                tags.get("historic"), tags.get("shop"), tags.get("man_made"),
+                tags.get("highway")
+            ]
+            valid_parts = [p.replace("_", " ").title() for p in name_parts if p]
+            name = valid_parts[0] if valid_parts else "Way Point"
+
+        # Resolve image URL via direct tag or Wikimedia Commons FilePath resolver
+        image = tags.get("image", "")
+        if not image and "wikimedia_commons" in tags:
+            commons_file = tags["wikimedia_commons"].replace("File:", "").strip()
+            encoded_file = urllib.parse.quote(commons_file)
+            image = f"https://commons.wikimedia.org/wiki/Special:FilePath/{encoded_file}"
+
+        PL.add_fort(n_lat, n_lng, "stop", name, image)
+        placed += 1
+
+    return placed
+
+
 class _Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -682,7 +774,7 @@ class _Handler(BaseHTTPRequestHandler):
                 lat, lng = rpc._last_loc[0], rpc._last_loc[1]
             except Exception:
                 lat, lng = 0.0, 0.0
-            import world, settings as CFG
+            import settings as CFG, world
             return self._json({"places": PL.get(), "config": EV.get(),
                                "presets": list(EV.PRESETS),
                                "storage": world.storage(),
@@ -702,6 +794,16 @@ class _Handler(BaseHTTPRequestHandler):
         except ValueError:
             d = {}
         try:
+            if p == "/api/fetch_pois":
+                lat = float(d.get("lat", 0.0))
+                lng = float(d.get("lng", 0.0))
+                radius_m = float(d.get("radius_m", 0.0))
+                if "radius_km" in d:
+                    radius_m = float(d["radius_km"]) * 1000.0
+                if radius_m <= 0:
+                    radius_m = 3000.0
+                count = fetch_overpass_pois(lat, lng, radius_m)
+                return self._json({"placed": count, "message": f"Successfully imported {count} PokeStops."})
             if p == "/api/fort":
                 return self._json(PL.add_fort(d.get("lat"), d.get("lng"),
                                               d.get("kind", "stop"), d.get("name", ""),
@@ -714,8 +816,7 @@ class _Handler(BaseHTTPRequestHandler):
             if p == "/api/clear":
                 return self._json(PL.clear(d.get("what", "all")))
             if p == "/api/give":
-                import world
-                import contextlib as _ctx
+                import contextlib as _ctx, world
                 who = (d.get("player") or "").strip()
                 kind = d.get("kind", "item")
                 try:
@@ -785,7 +886,7 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False,
                                    "message": f"no account called {who!r}"})
             if p == "/api/buyitem":
-                import world, contextlib as _ctx
+                import contextlib as _ctx, world
                 who = (d.get("player") or "").strip()
                 entry = next((e for e in SHOP if e[0] == d.get("sku")), None)
                 if not entry:
