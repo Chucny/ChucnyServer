@@ -10,6 +10,8 @@ import json
 import threading
 import urllib.parse
 import urllib.request
+import hashlib
+import random
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import events as EV
@@ -365,11 +367,15 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
     <div class="card">
       <div class="card-title">Import High-Density POIs</div>
       <div class="controls-row">
-        <input id="poi-lat" type="number" step="any" placeholder="Lat (e.g. 44.55678)" style="width: 130px">
-        <input id="poi-lng" type="number" step="any" placeholder="Lng (e.g. -49.0071)" style="width: 130px">
-        <input id="poi-r" type="number" value="3" min="0.1" max="50" step="0.1" style="width: 70px" title="Radius km">
-        <span style="font-size:13px; color:var(--text-muted)">km radius</span>
-        <button class="btn-primary" onclick="importPois()">Import POIs</button>
+        <input id="poi-lat" type="number" step="any" placeholder="Lat (e.g. 44.556)" style="width: 100px">
+        <input id="poi-lng" type="number" step="any" placeholder="Lng (e.g. -49.007)" style="width: 100px">
+        <input id="poi-r" type="number" value="3" min="0.1" max="50" step="0.1" style="width: 60px" title="Radius km">
+        <span style="font-size:13px; color:var(--text-muted)">km</span>
+        <input id="poi-limit" type="number" value="5000" min="100" max="10000" style="width: 75px" title="Max POIs Limit">
+        <span style="font-size:13px; color:var(--text-muted)">Limit</span>
+        <input id="poi-gym-chance" type="number" value="15" min="0" max="100" style="width: 60px" title="Gym Chance (%)">
+        <span style="font-size:13px; color:var(--text-muted)">% Gyms</span>
+        <button class="btn-primary" onclick="importPois()">Import</button>
       </div>
       <div class="hint" id="poihint">Imports nodes, ways, and relations from OSM including parks, art, and transit stops.</div>
     </div>
@@ -423,8 +429,12 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
         <button class="btn-primary" onclick="giveCandy()">Give Candy</button>
       </div>
       <div class="controls-row" style="margin-bottom: 8px;">
-        <input id="givedust" type="number" value="1000" min="1" max="999999" style="width: 100px;">
+        <input id="givedust" type="number" value="1000" min="1" max="999999" style="width: 80px;" title="Stardust">
         <button class="btn-primary" onclick="giveDust()">Give Stardust</button>
+        <input id="givecoins" type="number" value="100" min="1" max="999999" style="width: 80px;" title="PokeCoins">
+        <button class="btn-primary" onclick="giveCoins()">Give Coins</button>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
         <input id="newpw" placeholder="New Password" style="width: 130px;">
         <button onclick="resetPw()">Reset PW</button>
       </div>
@@ -490,10 +500,12 @@ async function importPois(){
   const lat = parseFloat($('poi-lat').value || player.lat);
   const lng = parseFloat($('poi-lng').value || player.lng);
   const r_km = parseFloat($('poi-r').value || 3);
+  const limit = parseInt($('poi-limit').value || 5000);
+  const gym_chance = parseFloat($('poi-gym-chance').value || 0) / 100.0;
   if(!lat || !lng){alert('Please enter latitude and longitude.'); return;}
   $('poihint').textContent = 'Fetching high-density POIs from OpenStreetMap...';
-  const r = await post('/api/fetch_pois', {lat: lat, lng: lng, radius_km: r_km});
-  $('poihint').textContent = r.message || ('Imported ' + r.placed + ' PokeStops.');
+  const r = await post('/api/fetch_pois', {lat: lat, lng: lng, radius_km: r_km, limit: limit, gym_chance: gym_chance});
+  $('poihint').textContent = r.message || ('Imported ' + r.placed + ' Objects.');
   load();
 }
 async function saveEv(){
@@ -574,15 +586,19 @@ async function giveCandy(){
   giveResult(await post('/api/give',{player:$('giveuser').value,
     kind:'candy', pokemon_id:+$('givecandy').value, count:+$('givecandyqty').value}));
 }
+async function giveDust(){
+  giveResult(await post('/api/give',{player:$('giveuser').value,
+    kind:'stardust', count:+$('givedust').value}));
+}
+async function giveCoins(){
+  giveResult(await post('/api/give',{player:$('giveuser').value,
+    kind:'coins', count:+$('givecoins').value}));
+}
 async function resetPw(){
   const who = $('giveuser').value.trim();
   if(!who) return giveResult({ok:false, message:'Select a trainer first'});
   giveResult(await post('/api/setpw', {player: who, password: $('newpw').value}));
   $('newpw').value='';
-}
-async function giveDust(){
-  giveResult(await post('/api/give',{player:$('giveuser').value,
-    kind:'stardust', count:+$('givedust').value}));
 }
 async function buy(kind){
   const r=await post('/api/buy',{what:kind});
@@ -678,27 +694,46 @@ load(); loadNoms(); setInterval(load, 15000); setInterval(loadNoms, 20000);
 </script></body></html>"""
 
 
-
-
-
-def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit: int = 500) -> int:
+def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit: int = 10000, gym_chance: float = 0.0) -> int:
     """Broadly queries OpenStreetMap via Overpass API for nodes, ways, and relations,
-
     extracting features (parks, art, transport, amenities) and photos.
     """
     query = f"""
-    [out:json][timeout:35];
+    [out:json][timeout:90];
     (
+      // 1. Core Points of Interest (Expanded)
       nwr(around:{radius_m},{lat},{lng})["amenity"];
       nwr(around:{radius_m},{lat},{lng})["leisure"];
       nwr(around:{radius_m},{lat},{lng})["tourism"];
       nwr(around:{radius_m},{lat},{lng})["historic"];
       nwr(around:{radius_m},{lat},{lng})["shop"];
       nwr(around:{radius_m},{lat},{lng})["man_made"];
+      nwr(around:{radius_m},{lat},{lng})["craft"];
+
+      // 2. Micro-Features & Street Furniture (Massive Density Boost)
+      nwr(around:{radius_m},{lat},{lng})["amenity"="bench"];
+      nwr(around:{radius_m},{lat},{lng})["amenity"="shelter"];
+      nwr(around:{radius_m},{lat},{lng})["amenity"="post_box"];
+      nwr(around:{radius_m},{lat},{lng})["amenity"="bicycle_parking"];
+      nwr(around:{radius_m},{lat},{lng})["leisure"="picnic_table"];
+      nwr(around:{radius_m},{lat},{lng})["tourism"="picnic_site"];
+      nwr(around:{radius_m},{lat},{lng})["tourism"="viewpoint"];
+
+      // 3. Specific Landmarks, Gates, and Elements
+      nwr(around:{radius_m},{lat},{lng})["barrier"="gate"];
+      nwr(around:{radius_m},{lat},{lng})["barrier"="city_wall"];
+      nwr(around:{radius_m},{lat},{lng})["natural"="tree"]["memorial"="yes"]; // Historic trees
+      nwr(around:{radius_m},{lat},{lng})["natural"="stone"]; // Large prominent boulders
+      nwr(around:{radius_m},{lat},{lng})["waterway"="waterfall"];
+
+      // 4. Transportation Nodes
       nwr(around:{radius_m},{lat},{lng})["highway"="bus_stop"];
+      nwr(around:{radius_m},{lat},{lng})["highway"="platform"];
+      nwr(around:{radius_m},{lat},{lng})["railway"="station"];
+      nwr(around:{radius_m},{lat},{lng})["railway"="tram_stop"];
     );
-    out center {limit};
-    """
+    out center {limit};"""
+
     url = "https://overpass-api.de/api/interpreter"
     data = urllib.parse.urlencode({"data": query}).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"User-Agent": "PoGOServer/1.0"})
@@ -731,14 +766,19 @@ def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit:
             valid_parts = [p.replace("_", " ").title() for p in name_parts if p]
             name = valid_parts[0] if valid_parts else "Way Point"
 
-        # Resolve image URL via direct tag or Wikimedia Commons FilePath resolver
+        # Resolve image URL via direct tag or Wikimedia Commons hash resolver
         image = tags.get("image", "")
         if not image and "wikimedia_commons" in tags:
             commons_file = tags["wikimedia_commons"].replace("File:", "").strip()
-            encoded_file = urllib.parse.quote(commons_file)
-            image = f"https://commons.wikimedia.org/wiki/Special:FilePath/{encoded_file}"
+            filename = commons_file.replace(" ", "_")
+            # MD5 hash is required to fetch raw images direct from Wikipedia's upload server structure
+            md5_hash = hashlib.md5(filename.encode('utf-8')).hexdigest()
+            image = f"https://upload.wikimedia.org/wikipedia/commons/{md5_hash[0]}/{md5_hash[0:2]}/{urllib.parse.quote(filename)}"
 
-        PL.add_fort(n_lat, n_lng, "stop", name, image)
+        # Enforce dynamic gym probability based on admin UI input
+        kind = "gym" if (gym_chance > 0 and random.random() < gym_chance) else "stop"
+        
+        PL.add_fort(n_lat, n_lng, kind, name, image)
         placed += 1
 
     return placed
@@ -798,12 +838,14 @@ class _Handler(BaseHTTPRequestHandler):
                 lat = float(d.get("lat", 0.0))
                 lng = float(d.get("lng", 0.0))
                 radius_m = float(d.get("radius_m", 0.0))
+                limit = int(d.get("limit", 5000))
+                gym_chance = float(d.get("gym_chance", 0.0))
                 if "radius_km" in d:
                     radius_m = float(d["radius_km"]) * 1000.0
                 if radius_m <= 0:
                     radius_m = 3000.0
-                count = fetch_overpass_pois(lat, lng, radius_m)
-                return self._json({"placed": count, "message": f"Successfully imported {count} PokeStops."})
+                count = fetch_overpass_pois(lat, lng, radius_m, limit, gym_chance)
+                return self._json({"placed": count, "message": f"Successfully imported {count} Objects."})
             if p == "/api/fort":
                 return self._json(PL.add_fort(d.get("lat"), d.get("lng"),
                                               d.get("kind", "stop"), d.get("name", ""),
@@ -831,6 +873,15 @@ class _Handler(BaseHTTPRequestHandler):
                             cnt = max(1, min(999999, int(d.get("count", 1))))
                             total = world.add_stardust(cnt)
                             msg = f"gave {target} {cnt} stardust (now {total})"
+                        elif kind == "coins":
+                            cnt = max(1, min(999999, int(d.get("count", 1))))
+                            try:
+                                total = world.add_coins(cnt)
+                            except AttributeError:
+                                # Fallback logic handling if standard add_coins is missing
+                                world.spend_coins(-cnt)
+                                total = world.COINS
+                            msg = f"gave {target} {cnt} PokeCoins (now {total})"
                         elif kind == "candy":
                             import protocol as P
                             pid = int(d.get("pokemon_id", 0))
