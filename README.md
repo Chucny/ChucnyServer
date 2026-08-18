@@ -18,11 +18,12 @@
 
 ### 📝 Features
 - **World Manager**: manage spawns and PokeStops
-- **Raids** (made by Bracky): Defeat a powerful boss at a gym. Once defeated, it spawns next to the gym for you to catch
+- **Raids**: Defeat a powerful boss at a gym. Once defeated, it spawns next to the gym for you to catch
 - **Community day & events**: Play different community days
-- **Gym battles** (made by Bracky): Battle pokemon in gyms!
+- **Gym battles**: Battle pokemon in gyms!
 - **Automatic dependency downloader**: automatically download dependencies
 - **Pokestop nomination** (**broken**, made by Bracky): Nominate PokeStops via the in-game help center. It doesn't seem to work yet.
+- **Automatic PokeStop import**: import up to 10000 PokeStops at once via OSM API!
 
 
 ### 🗄️ How to get assets
