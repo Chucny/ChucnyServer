@@ -8,7 +8,7 @@
 ### 🖥️ How to run
 1. Run the **DOWNLOAD.py** script. It will download all needed libraries
 2. Get the assets **(DM @chucny on discord to get them if you don't have them)**
-3. Run the script called **run.py**
+3. Run the script called **main.py**
 4. Install the Pokemon GO 0.29.0 APK onto your phone (note: it's a 32-bit APK)
 5. Install the file **CA.crt** inside the **/certs** folder as a **CA certificate** on your phone
 6. Go to your Wi-Fi settings and change your **DNS** to the IP shown in the server output
