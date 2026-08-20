@@ -313,10 +313,18 @@ def build_get_inventory_response() -> bytes:
         for _i in _incs:
             _iw.message(1, build_incubator(_i))
         items.append(_inventory_item(9, _iw.to_bytes(), now))
+        
+    # --- Pokedex Fix ---
+    pokedex_entries = {pid: (0, 0) for pid in range(1, 152)}
     for _pid, _seen, _caught in world.pokedex():                     # pokedex_entry
+        pokedex_entries[_pid] = (_seen, _caught)
+    pokedex_entries[151] = [1, 0]
+    for _pid, (_seen, _caught) in pokedex_entries.items():
         items.append(_inventory_item(3, pb.Writer()
                                      .uint(1, _pid).int_(2, _seen)
                                      .int_(3, _caught).to_bytes(), now))
+    # -------------------
+
     # Transferred/evolved Pokemon: tell the client they are GONE.
     alive = {int(c["uid"]) for c in world.caught()}
     for uid, _ts in world.recent_deletions():
@@ -333,6 +341,7 @@ def build_get_inventory_response() -> bytes:
             .bool_(1, True)                                   # success
             .message(2, delta.to_bytes())                     # inventory_delta
             .to_bytes())
+
 
 
 # Asset/template versions we pin the world to. Returning matching timestamps in
