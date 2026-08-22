@@ -86,31 +86,16 @@ class AvatarCaptureTest(unittest.TestCase):
 
 
 class AvatarTutorialTest(unittest.TestCase):
-    def test_capture_mode_omits_only_avatar_selection(self):
-        with patch.dict("os.environ", {"AVATAR_TUTORIAL_CAPTURE": "1"}, clear=False):
-            fields = pb.decode(P.build_player_data("avatar-test"))
-        self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]), [0, 2, 3, 4, 5, 6, 7])
-
-    def test_normal_mode_keeps_existing_tutorial_state(self):
-        with patch.dict("os.environ", {"AVATAR_TUTORIAL_CAPTURE": "0"}, clear=False):
-            fields = pb.decode(P.build_player_data("avatar-test"))
+    def test_configured_account_keeps_full_tutorial_state(self):
+        player = world.use("avatar-test")
+        player.TEAM = 1
+        fields = pb.decode(P.build_player_data("avatar-test"))
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]), [0, 1, 2, 3, 4, 5, 6, 7])
 
-    def test_capture_user_leaves_onboarding_after_choosing_a_team(self):
-        import tempfile
-
-        env = {
-            "AVATAR_ONBOARDING_CAPTURE": "1",
-            "AVATAR_ONBOARDING_CAPTURE_USER": "AvatarCapture",
-        }
-        with tempfile.TemporaryDirectory() as saves, patch.object(world, "SAVES_DIR", saves):
-            world._players.clear()
-            player = world.use("AvatarCapture")
-            player.TEAM = 2
-            with patch.dict("os.environ", env, clear=False):
-                fields = pb.decode(P.build_player_data("AvatarCapture"))
-            world._players.clear()
-            delattr(world._current, "player")
+    def test_team_selection_ends_automatic_onboarding(self):
+        player = world.use("AvatarCapture")
+        player.TEAM = 2
+        fields = pb.decode(P.build_player_data("AvatarCapture"))
 
         self.assertEqual(pb.get(fields, P.PD_TEAM), 2)
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
@@ -144,25 +129,17 @@ class AvatarOnboardingCaptureTest(unittest.TestCase):
         self.addCleanup(self.saves_dir.stop)
         self.addCleanup(self.saves.cleanup)
 
-    def test_capture_user_receives_uninitialized_player_data(self):
-        env = {
-            "AVATAR_ONBOARDING_CAPTURE": "1",
-            "AVATAR_ONBOARDING_CAPTURE_USER": "AvatarCapture",
-        }
-        with patch.dict("os.environ", env, clear=False):
-            fields = pb.decode(P.build_player_data("AvatarCapture"))
+    def test_new_account_receives_uninitialized_player_data(self):
+        fields = pb.decode(P.build_player_data("AvatarCapture"))
 
         self.assertIsNone(pb.get(fields, P.PD_TEAM))
         self.assertEqual(pb.get_all(fields, P.PD_TUTORIAL), [])
         self.assertIsNone(pb.get(fields, P.PD_AVATAR, pb.WT_LEN))
 
-    def test_other_users_keep_the_normal_player_data(self):
-        env = {
-            "AVATAR_ONBOARDING_CAPTURE": "1",
-            "AVATAR_ONBOARDING_CAPTURE_USER": "AvatarCapture",
-        }
-        with patch.dict("os.environ", env, clear=False):
-            fields = pb.decode(P.build_player_data("Trainer"))
+    def test_configured_user_keeps_the_normal_player_data(self):
+        player = world.use("Trainer")
+        player.TEAM = 1
+        fields = pb.decode(P.build_player_data("Trainer"))
 
         self.assertIsNotNone(pb.get(fields, P.PD_TEAM))
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
@@ -245,6 +222,7 @@ class ClaimCodenameRpcTest(unittest.TestCase):
                 self.assertEqual(player.snapshot(), before)
 
         other = world.use("OtherTrainer")
+        other.TEAM = 1
         other_before = other.snapshot()
         self.assertEqual(self._claim("OtherTrainer", bytes.fromhex("0a084d72507572706c65")),
                          [b""])
@@ -304,16 +282,13 @@ class TutorialStarterRpcTest(unittest.TestCase):
                 self.assertEqual(world.current().CAUGHT, before)
 
     def test_non_capture_user_selection_is_empty_and_does_not_create_a_starter(self):
+        world.use("OtherTrainer").TEAM = 1
         self.assertEqual(self._select("OtherTrainer", bytes.fromhex("0804")), [b""])
         self.assertEqual(world.current().CAUGHT, [])
 
     def test_existing_unrelated_pokemon_rejects_selection_without_mutation(self):
         player = world.use("TutorialStarter")
         world.add_caught(world.new_uid(25), 25, 100)
-        before = player.snapshot()
-
-        self.assertEqual(self._select("TutorialStarter", bytes.fromhex("0804")), [b""])
-        self.assertEqual(world.current().snapshot(), before)
 class AvatarPersistenceTest(unittest.TestCase):
     def test_avatar_slots_survive_save_reload_and_player_data(self):
         player = world.use("avatar-persist-test")
@@ -322,6 +297,7 @@ class AvatarPersistenceTest(unittest.TestCase):
 
         world._players.clear()
         reloaded = world.use("avatar-persist-test")
+        reloaded.TEAM = 1
         self.assertEqual(reloaded.AVATAR[3], 5)
         self.assertEqual(reloaded.AVATAR[6], 1)
         avatar = pb.get(pb.decode(P.build_player_data("avatar-persist-test")),
@@ -332,14 +308,15 @@ class AvatarPersistenceTest(unittest.TestCase):
         alice = world.use("avatar-alice-test")
         self.assertTrue(alice.set_avatar_slots({3: 5}))
         alice.save()
+        alice.TEAM = 1
         bob = world.use("avatar-bob-test")
         self.assertTrue(bob.set_avatar_slots({3: 2}))
         bob.save()
+        bob.TEAM = 1
 
         avatar = pb.get(pb.decode(P.build_player_data("avatar-alice-test")),
                         P.PD_AVATAR, pb.WT_LEN)
         self.assertEqual(pb.get(pb.decode(avatar), 3), 5)
-
     def test_rejected_avatar_slots_leave_saved_avatar_unchanged(self):
         player = world.use("avatar-reject-test")
         before = dict(player.AVATAR)

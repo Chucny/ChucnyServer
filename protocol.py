@@ -141,23 +141,17 @@ PD_CURRENCIES = 14
 GP_SUCCESS = 1
 GP_PLAYER_DATA = 2
 
-# Mark the whole new-user tutorial as already finished so the client skips
-# straight to the map. Extra/unknown enum values are ignored by the client.
+# New accounts enter onboarding until they pick a team. The persisted team is
+# the only source of truth; no environment flags are needed to bootstrap them.
 TUTORIAL_COMPLETE = [0, 1, 2, 3, 4, 5, 6, 7]
-TUTORIAL_AVATAR_SELECTION = 1
-TUTORIAL_FOR_AVATAR_CAPTURE = [0, 2, 3, 4, 5, 6, 7]
 
 
 def tutorial_state():
-    if os.environ.get("AVATAR_TUTORIAL_CAPTURE") == "1":
-        return TUTORIAL_FOR_AVATAR_CAPTURE
     return TUTORIAL_COMPLETE
 
 
 def avatar_onboarding_capture(username: str) -> bool:
-    return (os.environ.get("AVATAR_ONBOARDING_CAPTURE") == "1"
-            and username == os.environ.get("AVATAR_ONBOARDING_CAPTURE_USER")
-            and _world.team_for(username) == 0)
+    return _world.team_for(username) == 0
 
 
 
