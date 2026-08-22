@@ -30,6 +30,33 @@ class AvatarCaptureTest(unittest.TestCase):
         self.assertEqual(output.getvalue(),
                          "[capture] type=404 name=SET_AVATAR message=<redacted>\n")
 
+    def test_capture_redacts_claim_codename_payload(self):
+        with patch.dict("os.environ", {"CAPTURE_RPC_REQUESTS": "1"}, clear=False):
+            output = io.StringIO()
+            rpc.capture_request(P.RT.CLAIM_CODENAME,
+                                bytes.fromhex("0a084d72507572706c65"), output.write)
+
+        self.assertEqual(output.getvalue(),
+                         "[capture] type=403 name=CLAIM_CODENAME message=<redacted>\n")
+
+    def test_claim_codename_skips_verbose_envelope_logging(self):
+        request = (pb.Writer()
+                   .uint(P.REQ_TYPE, P.RT.CLAIM_CODENAME)
+                   .message(P.REQ_MESSAGE, bytes.fromhex("0a084d72507572706c65"))
+                   .to_bytes())
+        envelope = (pb.Writer()
+                    .uint(P.RE_STATUS_CODE, 2)
+                    .uint(P.RE_REQUEST_ID, 1)
+                    .message(P.RE_REQUESTS, request)
+                    .to_bytes())
+        output = io.StringIO()
+
+        with patch.object(rpc, "_dump_budget", [1]):
+            rpc.handle("POST", "/plfe/rpc", {}, {}, envelope, output.write)
+
+        self.assertNotIn("raw RequestEnvelope", output.getvalue())
+        self.assertNotIn("MrPurple", output.getvalue())
+
     def test_capture_mode_skips_envelope_logging(self):
         request = (pb.Writer()
                    .uint(P.REQ_TYPE, 8)

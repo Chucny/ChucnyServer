@@ -58,7 +58,8 @@ def _envelope_latlng(fields):
 
 def capture_request(request_type: int, message: bytes, log) -> None:
     if os.environ.get("CAPTURE_RPC_REQUESTS") == "1":
-        payload = "<redacted>" if request_type == P.RT.SET_AVATAR else message.hex()
+        payload = ("<redacted>" if request_type in (P.RT.SET_AVATAR, P.RT.CLAIM_CODENAME)
+                   else message.hex())
         log(f"[capture] type={request_type} name={P.rt_name(request_type)} "
             f"message={payload}\n")
 
@@ -450,7 +451,8 @@ def handle(method, path, query, headers, body, log):
             pass
         log(f"[loc] player at {ll[0]:.5f},{ll[1]:.5f}")
 
-    if os.environ.get("CAPTURE_RPC_REQUESTS") != "1":
+    if (os.environ.get("CAPTURE_RPC_REQUESTS") != "1"
+            and not any(t == P.RT.CLAIM_CODENAME for t, _ in reqs)):
         if _dump_budget[0] > 0:
             _dump_budget[0] -= 1
             import pb
