@@ -239,6 +239,24 @@ def build_get_player_response(username: str) -> bytes:
             .to_bytes())
 
 
+def build_get_player_profile_response() -> bytes:
+    """GetPlayerProfileResponse { result=1, badge=3 repeated }."""
+    player = _world.current()
+    response = pb.Writer().uint(1, 1)
+    for key, progress in player.BADGE_PROGRESS.items():
+        definition = _world.BADGE_DEFINITIONS.get(key)
+        rank = player.BADGE_LEVELS.get(key, 0)
+        if not definition or not (rank or progress):
+            continue
+        badge = (pb.Writer()
+                 .uint(1, definition["type"])
+                 .uint(2, rank)
+                 .double(5, float(progress))
+                 .to_bytes())
+        response.message(3, badge)
+    return response.to_bytes()
+
+
 def build_mark_tutorial_complete_response() -> bytes:
     return pb.Writer().bool_(1, True).to_bytes()
 

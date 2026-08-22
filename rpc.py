@@ -84,6 +84,9 @@ def _build_returns(reqs, username, log):
         if rtype == P.RT.GET_PLAYER:
             returns.append(P.build_get_player_response(username))
             log(f"      -> GET_PLAYER answered as {username!r}")
+        elif rtype == P.RT.GET_PLAYER_PROFILE:
+            returns.append(P.build_get_player_profile_response())
+            log("      -> GET_PLAYER_PROFILE answered with badge progress")
         elif rtype == P.RT.GET_MAP_OBJECTS:
             cells, lat, lng = P.parse_get_map_objects(msg)
             if not lat and not lng:                 # map msg had no fix; use the

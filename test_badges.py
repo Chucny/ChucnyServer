@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+import struct
 import unittest
 
 import tempfile
@@ -297,3 +298,27 @@ class BadgeEventAndResponseTest(BadgeProgressTest):
         empty = rpc._build_returns(
             [(protocol.RT.CHECK_AWARDED_BADGES, b"")], "badges", lambda _: None)[0]
         self.assertEqual(pb.get_all(pb.decode(empty), 2), [])
+
+    def test_profile_serializes_persisted_pokedex_badge(self):
+        player = world.use("badges")
+        world.record_badge_progress("BADGE_POKEDEX_ENTRIES", 50)
+        player.save()
+        world._players.clear()
+        delattr(world._current, "player")
+
+        response = rpc._build_returns(
+            [(protocol.RT.GET_PLAYER_PROFILE, b"")], "badges", lambda _: None)[0]
+
+        profile = pb.decode(response)
+        self.assertEqual(pb.get(profile, 1, pb.WT_VARINT), 1)
+        badges = [pb.decode(raw) for raw in pb.get_all(profile, 3)]
+        self.assertEqual(len(badges), 1)
+        badge = badges[0]
+        self.assertEqual(pb.get(badge, 1, pb.WT_VARINT), 2)
+        self.assertEqual(pb.get(badge, 2, pb.WT_VARINT), 2)
+        self.assertEqual(
+            struct.unpack("<d", struct.pack("<Q", pb.get(badge, 5, pb.WT_64)))[0],
+            50.0,
+        )
+        self.assertIsNone(pb.get(badge, 3))
+        self.assertIsNone(pb.get(badge, 4))
