@@ -377,15 +377,16 @@ def handle(method, path, query, headers, body, log):
             pass
         log(f"[loc] player at {ll[0]:.5f},{ll[1]:.5f}")
 
-    if _dump_budget[0] > 0:
-        _dump_budget[0] -= 1
-        import pb
-        log(f"[rpc] {path}  request_id={request_id}  username={username!r}  "
-            f"requests={[P.rt_name(t) for t, _ in reqs]}")
-        log("[rpc] ---- raw RequestEnvelope ----\n" + pb.pretty(body))
-        log("[rpc] -------------------------------")
-    else:
-        log(f"[rpc] {path}  reqs={[P.rt_name(t) for t, _ in reqs]}  user={username!r}")
+    if os.environ.get("CAPTURE_RPC_REQUESTS") != "1":
+        if _dump_budget[0] > 0:
+            _dump_budget[0] -= 1
+            import pb
+            log(f"[rpc] {path}  request_id={request_id}  username={username!r}  "
+                f"requests={[P.rt_name(t) for t, _ in reqs]}")
+            log("[rpc] ---- raw RequestEnvelope ----\n" + pb.pretty(body))
+            log("[rpc] -------------------------------")
+        else:
+            log(f"[rpc] {path}  reqs={[P.rt_name(t) for t, _ in reqs]}  user={username!r}")
 
     # Bootstrap handshake: tell the client which host to use from now on.
     if path == "/plfe/rpc":
