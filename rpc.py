@@ -14,9 +14,11 @@ Milestone 1: get the player logged in and onto the map.
 api_url stays on pgorelease.nianticlabs.com so the client keeps hitting a host
 our DNS redirect + TLS cert already cover.
 """
-import struct
 import os
+import struct
+import threading
 import time
+
 import pb
 import protocol as P
 
@@ -26,6 +28,23 @@ ASSET_BASE_URL = f"https://{API_HOST}/asset"   # where GET_DOWNLOAD_URLS points
 _dump_budget = [8]                 # verbosely dump the first N envelopes
 _last_loc = [0.0, 0.0]            # last non-zero player location we've seen
 _last_user = [None]               # last trainer to make a request (for /shop)
+_teleport_lock = threading.Lock()
+_teleports = {}
+
+
+def set_teleport(username: str, lat: float, lng: float) -> None:
+    with _teleport_lock:
+        _teleports[username] = (lat, lng)
+
+
+def map_position(username: str, lat: float, lng: float) -> tuple[float, float]:
+    with _teleport_lock:
+        return _teleports.get(username, (lat, lng))
+
+
+def teleports() -> dict[str, tuple[float, float]]:
+    with _teleport_lock:
+        return dict(_teleports)
 
 
 def _envelope_latlng(fields):
@@ -61,6 +80,7 @@ def _build_returns(reqs, username, log):
             cells, lat, lng = P.parse_get_map_objects(msg)
             if not lat and not lng:                 # map msg had no fix; use the
                 lat, lng = _last_loc                # player's last known location
+            lat, lng = map_position(username, lat, lng)
             returns.append(P.build_get_map_objects_response(cells, lat, lng))
             log(f"      -> GET_MAP_OBJECTS: {len(cells)} cells @ ({lat:.5f},{lng:.5f}) + spawns")
         elif rtype == P.RT.GET_INVENTORY:

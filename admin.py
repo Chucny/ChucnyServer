@@ -818,6 +818,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"places": PL.get(), "config": EV.get(),
                                "presets": list(EV.PRESETS),
                                "storage": world.storage(),
+                               "teleports": rpc.teleports(),
                                "prices": {
                                    "pokemon_step": CFG.get("storage", "pokemon_upgrade_step"),
                                    "pokemon_cost": CFG.get("storage", "pokemon_upgrade_cost"),
@@ -846,6 +847,22 @@ class _Handler(BaseHTTPRequestHandler):
                     radius_m = 3000.0
                 count = fetch_overpass_pois(lat, lng, radius_m, limit, gym_chance)
                 return self._json({"placed": count, "message": f"Successfully imported {count} Objects."})
+            if p == "/api/teleport":
+                import math, rpc, world
+                player = (d.get("player") or "").strip()
+                try:
+                    lat = float(d["lat"])
+                    lng = float(d["lng"])
+                except (KeyError, TypeError, ValueError):
+                    return self._json(
+                        {"ok": False, "message": "latitude and longitude are required"}, 400)
+                if player not in world.account_names():
+                    return self._json({"ok": False, "message": "unknown trainer"}, 400)
+                if not (math.isfinite(lat) and math.isfinite(lng)
+                        and -90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
+                    return self._json({"ok": False, "message": "invalid coordinates"}, 400)
+                rpc.set_teleport(player, lat, lng)
+                return self._json({"ok": True, "player": player, "lat": lat, "lng": lng})
             if p == "/api/fort":
                 return self._json(PL.add_fort(d.get("lat"), d.get("lng"),
                                               d.get("kind", "stop"), d.get("name", ""),
