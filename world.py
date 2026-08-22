@@ -133,6 +133,54 @@ def _load_badge_definitions():
 BADGE_DEFINITIONS = _load_badge_definitions()
 
 
+_POKEMON_TYPE_NAMES = (
+    "", "NORMAL", "FIGHTING", "FLYING", "POISON", "GROUND", "ROCK", "BUG",
+    "GHOST", "STEEL", "FIRE", "WATER", "GRASS", "ELECTRIC", "PSYCHIC",
+    "ICE", "DRAGON", "DARK", "FAIRY",
+)
+_TYPE_BADGES = None
+
+
+def type_badges_from_game_master(data):
+    """Return every species' fixture-backed primary and secondary type badges."""
+    badges = {}
+    for raw_template in pb.get_all(pb.decode(data), 2):
+        template = pb.decode(raw_template)
+        settings = pb.get(template, 2, pb.WT_LEN)
+        if not isinstance(settings, bytes):
+            continue
+        pokemon = pb.decode(settings)
+        pokemon_id = pb.get(pokemon, 1, pb.WT_VARINT)
+        if not isinstance(pokemon_id, int) or pokemon_id <= 0:
+            continue
+        keys = []
+        for type_id in (pb.get(pokemon, 4, pb.WT_VARINT),
+                        pb.get(pokemon, 5, pb.WT_VARINT)):
+            if isinstance(type_id, int) and 0 < type_id < len(_POKEMON_TYPE_NAMES):
+                key = "BADGE_TYPE_" + _POKEMON_TYPE_NAMES[type_id]
+                if key in BADGE_DEFINITIONS and key not in keys:
+                    keys.append(key)
+        if keys:
+            badges[pokemon_id] = tuple(keys)
+    return badges
+
+
+def _type_badges():
+    global _TYPE_BADGES
+    if _TYPE_BADGES is None:
+        try:
+            with open(os.path.join(HERE, "game_master.bin"), "rb") as fh:
+                _TYPE_BADGES = type_badges_from_game_master(fh.read())
+        except (OSError, IndexError, ValueError):
+            _TYPE_BADGES = {}
+    return _TYPE_BADGES
+
+
+def _record_type_badges(pokemon_id):
+    for key in dict.fromkeys(_type_badges().get(int(pokemon_id), ())):
+        record_badge_progress(key, 1)
+
+
 # ==============================================================================
 # General Helpers
 # ==============================================================================
@@ -841,6 +889,7 @@ def add_caught(uid, pokemon_id, cp):
     record_badge_progress("BADGE_CAPTURE_TOTAL", 1)
     if int(pokemon_id) == 25:
         record_badge_progress("BADGE_PIKACHU", 1)
+    _record_type_badges(pokemon_id)
     return n
 
 

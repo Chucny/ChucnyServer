@@ -41,6 +41,19 @@ class BadgeTemplateExtractionTest(unittest.TestCase):
         self.assertEqual(fixture, actual)
 
 
+
+class TypeBadgeMetadataTest(unittest.TestCase):
+    def test_game_master_type_fields_map_to_fixture_badges(self):
+        pokemon = (pb.Writer().string(1, "V0001_POKEMON_BULBASAUR")
+                   .message(2, pb.Writer().uint(1, 1).uint(4, 12).uint(5, 4).to_bytes())
+                   .to_bytes())
+
+        self.assertEqual(
+            world.type_badges_from_game_master(pb.Writer().message(2, pokemon).to_bytes()),
+            {1: ("BADGE_TYPE_GRASS", "BADGE_TYPE_POISON")},
+        )
+
+
 class BadgeProgressTest(unittest.TestCase):
     def setUp(self):
         self.saves = tempfile.TemporaryDirectory()
@@ -116,7 +129,11 @@ class BadgeEventAndResponseTest(BadgeProgressTest):
 
         self.assertEqual(player.BADGE_PROGRESS["BADGE_CAPTURE_TOTAL"], 30)
         self.assertEqual(player.BADGE_PROGRESS["BADGE_POKEDEX_ENTRIES"], 5)
-        self.assertCountEqual(player.BADGE_PENDING, [3, 2])
+        self.assertCountEqual(player.BADGE_PENDING, [
+            world.BADGE_DEFINITIONS[key]["type"]
+            for key in ("BADGE_CAPTURE_TOTAL", "BADGE_POKEDEX_ENTRIES",
+                        "BADGE_TYPE_GRASS", "BADGE_TYPE_POISON", "BADGE_TYPE_FIRE")
+        ])
 
     def test_pokestop_visits_record_fixture_badge(self):
         player = world.use("badges")
@@ -140,8 +157,21 @@ class BadgeEventAndResponseTest(BadgeProgressTest):
         player = world.use("badges")
 
         world.add_caught(25, 25, 10)
-
         self.assertEqual(player.BADGE_PROGRESS["BADGE_PIKACHU"], 1)
+
+
+    def test_catch_credits_each_distinct_species_type_once(self):
+        player = world.use("badges")
+        with patch.object(world, "_TYPE_BADGES", {
+            1: ("BADGE_TYPE_GRASS", "BADGE_TYPE_POISON"),
+            2: ("BADGE_TYPE_WATER", "BADGE_TYPE_WATER"),
+        }):
+            world.add_caught(1, 1, 10)
+            world.add_caught(2, 2, 10)
+
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_TYPE_GRASS"], 1)
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_TYPE_POISON"], 1)
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_TYPE_WATER"], 1)
 
     def test_choosing_pikachu_starter_records_pikachu_badge(self):
         player = world.use("badges")
