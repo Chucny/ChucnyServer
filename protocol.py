@@ -1642,6 +1642,7 @@ def build_evolve_response(uid) -> bytes:
     new_id = _random.Random(uid).choice(evo)                   # Eevee branches
     newcp = int(c["cp"] * 1.6) + 20
     world.update_caught(uid, pokemon_id=new_id, cp=newcp)
+    world.record_badge_progress("BADGE_EVOLVED_TOTAL", 1)
     xp = _cfg.get("pokemon", "evolve_xp", cast=int)
     world.add_xp(xp)
     world.add_candy(fam, 1)                                    # evolving pays 1 back
@@ -2020,6 +2021,9 @@ def build_attack_gym_response(gym_id, battle_id, actions, now_ms, last_seen=0) -
             else:
                 world.clear_gym(gym_id)
             world.add_xp(_cfg.get("battles", "win_xp", cast=int))
+            world.record_badge_progress(
+                "BADGE_BATTLE_TRAINING_WON"
+                if b.get("type") == BT_TRAINING else "BADGE_BATTLE_ATTACK_WON", 1)
             log_actions.append(_action(BA_VICTORY, t, 0, 0, 0,
                                        b["attacker"], b["defender"]))
     elif b["atk_hp"] <= 0:

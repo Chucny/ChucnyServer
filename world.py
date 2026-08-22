@@ -839,6 +839,8 @@ def add_caught(uid, pokemon_id, cp):
         n = len(p.CAUGHT)
     p.save()
     record_badge_progress("BADGE_CAPTURE_TOTAL", 1)
+    if int(pokemon_id) == 25:
+        record_badge_progress("BADGE_PIKACHU", 1)
     return n
 
 
@@ -863,6 +865,8 @@ def add_tutorial_starter(pokemon_id, cp=10):
         entry[0] = max(entry[0], entry[1])
     p.save()
     record_badge_progress("BADGE_CAPTURE_TOTAL", 1)
+    if int(pokemon_id) == 25:
+        record_badge_progress("BADGE_PIKACHU", 1)
     record_badge_progress("BADGE_POKEDEX_ENTRIES", 1)
     return dict(starter)
 
@@ -1136,6 +1140,7 @@ def check_hatches(pick_species):
             done.append(rec)
     if done:
         p.save()
+        record_badge_progress("BADGE_HATCHED_TOTAL", len(done))
     return done
 
 
