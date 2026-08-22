@@ -102,6 +102,14 @@ class AvatarTutorialTest(unittest.TestCase):
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
                          [0, 1, 2, 3, 4, 5, 6, 7])
 
+    def test_profile_without_team_keeps_team_unset(self):
+        player = world.use("TeamlessTrainer")
+        player.CODENAME = "Teamless"
+        player.CAUGHT = [{"uid": 1, "pokemon_id": 4, "cp": 10}]
+        fields = pb.decode(P.build_player_data("TeamlessTrainer"))
+
+        self.assertEqual(pb.get(fields, P.PD_TEAM), 0)
+
     def setUp(self):
         import tempfile
 

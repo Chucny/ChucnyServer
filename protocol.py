@@ -211,7 +211,7 @@ def _storage():
 
 def build_player_data(username: str) -> bytes:
     display_name = _world.codename_for(username) or username
-    team = _world.team_for(username) or _team()
+    team = _world.team_for(username)
     w = (pb.Writer()
          .uint(PD_CREATION_MS, int(time.time() * 1000) - 86_400_000)
          .string(PD_USERNAME, display_name))
