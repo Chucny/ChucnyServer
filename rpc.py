@@ -235,6 +235,22 @@ def _build_returns(reqs, username, log):
                 world.current().save()
                 returns.append(P.build_set_avatar_response())
                 log("      -> SET_AVATAR success")
+        elif rtype == P.RT.CLAIM_CODENAME:
+            try:
+                fields = pb.decode(msg)
+                if (not P.avatar_onboarding_capture(username) or len(fields) != 1
+                        or fields[0]["field"] != 1 or fields[0]["wire"] != pb.WT_LEN):
+                    raise ValueError
+                codename = fields[0]["value"].decode("ascii")
+                if (pb.Writer().string(1, codename).to_bytes() != msg
+                        or not world.current().set_codename(codename)):
+                    raise ValueError
+            except (AttributeError, IndexError, UnicodeDecodeError, ValueError):
+                returns.append(b"")
+            else:
+                world.current().save()
+                returns.append(P.build_claim_codename_response(codename))
+                log("      -> CLAIM_CODENAME success")
         elif rtype == P.RT.SET_PLAYER_TEAM:
             team = P.parse_set_player_team(msg)
             r = P.build_set_player_team_response(team, username)

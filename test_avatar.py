@@ -113,6 +113,58 @@ class AvatarOnboardingCompletionTest(unittest.TestCase):
         self.assertEqual(pb.get(pb.decode(replies[0]), 1), 1)
 
 
+class ClaimCodenameRpcTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.saves = tempfile.TemporaryDirectory()
+        self.saves_dir = patch.object(world, "SAVES_DIR", self.saves.name)
+        self.saves_dir.start()
+        world._players.clear()
+        self.addCleanup(world._players.clear)
+        self.addCleanup(self.saves_dir.stop)
+        self.addCleanup(self.saves.cleanup)
+        self.env = {
+            "AVATAR_ONBOARDING_CAPTURE": "1",
+            "AVATAR_ONBOARDING_CAPTURE_USER": "AvatarCapture",
+        }
+
+    def _claim(self, username, body):
+        with patch.dict("os.environ", self.env, clear=False):
+            return rpc._build_returns([(403, body)], username, lambda _: None)
+
+    def test_observed_name_returns_success_and_persists_display_name(self):
+        reply = self._claim("AvatarCapture", bytes.fromhex("0a084d72507572706c65"))[0]
+
+        fields = pb.decode(reply)
+        self.assertEqual(pb.get(fields, 1, pb.WT_LEN), b"MrPurple")
+        self.assertEqual(pb.get(fields, 3, pb.WT_VARINT), 1)
+        self.assertEqual(pb.get(fields, 4, pb.WT_VARINT), 1)
+        self.assertIsNone(pb.get(fields, 5, pb.WT_LEN))
+        self.assertEqual(world.current().username, "AvatarCapture")
+        self.assertEqual(world.current().CODENAME, "MrPurple")
+
+        world._players.clear()
+        reloaded = world.use("AvatarCapture")
+        self.assertEqual(reloaded.username, "AvatarCapture")
+        self.assertEqual(reloaded.CODENAME, "MrPurple")
+        player_data = pb.decode(P.build_player_data("AvatarCapture"))
+        self.assertEqual(pb.get(player_data, P.PD_USERNAME, pb.WT_LEN), b"MrPurple")
+
+    def test_invalid_or_non_capture_claims_leave_existing_player_unchanged(self):
+        player = world.use("AvatarCapture")
+        before = player.snapshot()
+        for body in (b"", b"\x0a", bytes.fromhex("0a024161"), bytes.fromhex("0a03412141")):
+            with self.subTest(body=body.hex()):
+                self.assertEqual(self._claim("AvatarCapture", body), [b""])
+                self.assertEqual(player.snapshot(), before)
+
+        other = world.use("OtherTrainer")
+        other_before = other.snapshot()
+        self.assertEqual(self._claim("OtherTrainer", bytes.fromhex("0a084d72507572706c65")),
+                         [b""])
+        self.assertEqual(other.snapshot(), other_before)
+
+
 
 class TutorialStarterRpcTest(unittest.TestCase):
     def setUp(self):

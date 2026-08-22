@@ -110,6 +110,7 @@ class RT:
     GET_INCENSE_POKEMON = 142
     ADD_FORT_MODIFIER = 144
     SET_AVATAR = 404
+    CLAIM_CODENAME = 403
     SET_PLAYER_TEAM = 405
     MARK_TUTORIAL_COMPLETE = 406
     USE_ITEM_REVIVE = 116
@@ -214,9 +215,10 @@ def _storage():
 
 
 def build_player_data(username: str) -> bytes:
+    display_name = _world.codename_for(username) or username
     w = (pb.Writer()
          .uint(PD_CREATION_MS, int(time.time() * 1000) - 86_400_000)
-         .string(PD_USERNAME, username))
+         .string(PD_USERNAME, display_name))
     if not avatar_onboarding_capture(username):
         w = (w.uint(PD_TEAM, _team())                 # non-zero so Gyms are usable
              .packed_varints(PD_TUTORIAL, tutorial_state())
@@ -237,6 +239,14 @@ def build_get_player_response(username: str) -> bytes:
 
 def build_mark_tutorial_complete_response() -> bytes:
     return pb.Writer().bool_(1, True).to_bytes()
+
+
+def build_claim_codename_response(codename: str) -> bytes:
+    return (pb.Writer()
+            .string(1, codename)
+            .bool_(3, True)
+            .uint(4, 1)
+            .to_bytes())
 
 
 def build_set_avatar_response() -> bytes:

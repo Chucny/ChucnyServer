@@ -187,6 +187,7 @@ class Player:
         self.BERRIES = {}        # encounter_id -> capture multiplier in effect
         self.PW = ""             # "salt$hash"; empty until the account is claimed
         self.AVATAR = dict(DEFAULT_AVATAR)
+        self.CODENAME = ""
 
         self.APPLIED = []        # active Lucky Egg / Incense
         self.STATS = {
@@ -221,6 +222,7 @@ class Player:
             "max_pokemon": self.MAX_POKEMON,
             "max_items": self.MAX_ITEMS,
             "avatar": {str(slot): value for slot, value in self.AVATAR.items()},
+            "codename": self.CODENAME,
         }
 
 
@@ -287,6 +289,10 @@ class Player:
 
         self.TEAM = int(d.get("team", 0) or 0)
         self.PW = str(d.get("pw", "") or "")
+        codename = d.get("codename", "")
+        if (isinstance(codename, str) and 3 <= len(codename) <= 15
+                and codename.isascii() and codename.isalnum()):
+            self.CODENAME = codename
         self.APPLIED = [a for a in (d.get("applied") or []) if isinstance(a, dict)]
         self.EGGS = [e for e in (d.get("eggs") or []) if isinstance(e, dict)]
         inc = [i for i in (d.get("incubators") or []) if isinstance(i, dict)]
@@ -336,6 +342,14 @@ class Player:
             self.AVATAR = avatar
         return True
 
+    def set_codename(self, codename: str) -> bool:
+        if (not isinstance(codename, str) or not 3 <= len(codename) <= 15
+                or not codename.isascii() or not codename.isalnum()):
+            return False
+        with _lock:
+            self.CODENAME = codename
+        return True
+
 
 # ==============================================================================
 # Player Session & Account Context Management
@@ -376,6 +390,19 @@ def avatar_for(username: str) -> dict[int, int]:
     if player.load_from(player.file):
         return dict(player.AVATAR)
     return dict(DEFAULT_AVATAR)
+
+
+def codename_for(username: str) -> str:
+    """Return an account display name without switching the current player."""
+    name = username or ""
+    if not name:
+        return ""
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return player.CODENAME
+    player = Player(name)
+    return player.CODENAME if player.load_from(player.file) else ""
 
 
 def current():
