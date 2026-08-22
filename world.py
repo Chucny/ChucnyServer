@@ -405,6 +405,19 @@ def codename_for(username: str) -> str:
     return player.CODENAME if player.load_from(player.file) else ""
 
 
+
+def team_for(username: str) -> int:
+    """Return an account team without switching the current player."""
+    name = username or ""
+    if not name:
+        return 0
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return player.TEAM
+    player = Player(name)
+    return player.TEAM if player.load_from(player.file) else 0
+
 def current():
     p = getattr(_current, "player", None)
     if p is None:

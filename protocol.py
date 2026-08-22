@@ -156,7 +156,8 @@ def tutorial_state():
 
 def avatar_onboarding_capture(username: str) -> bool:
     return (os.environ.get("AVATAR_ONBOARDING_CAPTURE") == "1"
-            and username == os.environ.get("AVATAR_ONBOARDING_CAPTURE_USER"))
+            and username == os.environ.get("AVATAR_ONBOARDING_CAPTURE_USER")
+            and _world.team_for(username) == 0)
 
 
 
@@ -216,11 +217,12 @@ def _storage():
 
 def build_player_data(username: str) -> bytes:
     display_name = _world.codename_for(username) or username
+    team = _world.team_for(username) or _team()
     w = (pb.Writer()
          .uint(PD_CREATION_MS, int(time.time() * 1000) - 86_400_000)
          .string(PD_USERNAME, display_name))
     if not avatar_onboarding_capture(username):
-        w = (w.uint(PD_TEAM, _team())                 # non-zero so Gyms are usable
+        w = (w.uint(PD_TEAM, team)
              .packed_varints(PD_TUTORIAL, tutorial_state())
              .message(PD_AVATAR, build_player_avatar(_world.avatar_for(username))))
     return (w.uint(PD_MAX_POKEMON, _storage()[0])
