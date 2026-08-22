@@ -673,6 +673,29 @@ def add_caught(uid, pokemon_id, cp):
     return n
 
 
+def add_tutorial_starter(pokemon_id, cp=10):
+    """Persist one selected starter, or return the account's existing Pokémon."""
+    p = current()
+    with _lock:
+        if p.CAUGHT:
+            return dict(p.CAUGHT[0])
+        uid = new_uid(pokemon_id)
+        starter = {
+            "uid": uid,
+            "pokemon_id": pokemon_id,
+            "cp": cp,
+            "caught_ms": int(time.time() * 1000),
+        }
+        p.CAUGHT.append(starter)
+        p.STATS["pokemons_captured"] += 1
+        p.STATS["unique_pokedex_entries"] = 1
+        entry = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
+        entry[1] += 1
+        entry[0] = max(entry[0], entry[1])
+    p.save()
+    return dict(starter)
+
+
 def caught():
     with _lock:
         return list(current().CAUGHT)

@@ -113,6 +113,61 @@ class AvatarOnboardingCompletionTest(unittest.TestCase):
         self.assertEqual(pb.get(pb.decode(replies[0]), 1), 1)
 
 
+
+class TutorialStarterRpcTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.saves = tempfile.TemporaryDirectory()
+        self.saves_dir = patch.object(world, "SAVES_DIR", self.saves.name)
+        self.saves_dir.start()
+        world._players.clear()
+        self.addCleanup(world._players.clear)
+        self.addCleanup(self.saves_dir.stop)
+        self.addCleanup(self.saves.cleanup)
+        self.env = {
+            "AVATAR_ONBOARDING_CAPTURE": "1",
+            "AVATAR_ONBOARDING_CAPTURE_USER": "TutorialStarter",
+        }
+
+    def _select(self, username, body):
+        with patch.dict("os.environ", self.env, clear=False):
+            return rpc._build_returns([(127, body)], username, lambda _: None)
+
+    def test_observed_charmander_selection_returns_and_stores_one_starter(self):
+        reply = self._select("TutorialStarter", bytes.fromhex("0804"))[0]
+
+        response = pb.decode(reply)
+        self.assertEqual(pb.get(response, 1), 1)
+        pokemon = pb.decode(pb.get(response, 2, pb.WT_LEN))
+        stored = world.current().CAUGHT
+        self.assertEqual(len(stored), 1)
+        self.assertEqual(stored[0]["pokemon_id"], 4)
+        self.assertEqual(pb.get(pokemon, 2), 4)
+        self.assertEqual(pb.get(pokemon, 1, pb.WT_64), stored[0]["uid"])
+
+    def test_repeat_selection_returns_the_existing_starter_without_duplicate(self):
+        first = self._select("TutorialStarter", bytes.fromhex("0804"))[0]
+        second = self._select("TutorialStarter", bytes.fromhex("0804"))[0]
+        first_response = pb.decode(first)
+        self.assertEqual(pb.get(first_response, 1), 1)
+        first_pokemon = pb.decode(pb.get(first_response, 2, pb.WT_LEN))
+        second_pokemon = pb.decode(pb.get(pb.decode(second), 2, pb.WT_LEN))
+        self.assertEqual(len(world.current().CAUGHT), 1)
+        self.assertEqual(pb.get(second_pokemon, 1, pb.WT_64),
+                         pb.get(first_pokemon, 1, pb.WT_64))
+
+    def test_invalid_or_malformed_selection_leaves_existing_account_unchanged(self):
+        self._select("TutorialStarter", bytes.fromhex("0804"))
+        before = list(world.current().CAUGHT)
+
+        for body in (bytes.fromhex("0802"), b"", b"\x08", bytes.fromhex("08041000")):
+            with self.subTest(body=body.hex()):
+                self.assertEqual(self._select("TutorialStarter", body), [b""])
+                self.assertEqual(world.current().CAUGHT, before)
+
+    def test_non_capture_user_selection_is_empty_and_does_not_create_a_starter(self):
+        self.assertEqual(self._select("OtherTrainer", bytes.fromhex("0804")), [b""])
+        self.assertEqual(world.current().CAUGHT, [])
 class AvatarPersistenceTest(unittest.TestCase):
     def test_avatar_slots_survive_save_reload_and_player_data(self):
         player = world.use("avatar-persist-test")

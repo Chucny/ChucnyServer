@@ -249,6 +249,26 @@ def _build_returns(reqs, username, log):
               and msg == bytes.fromhex("0a01001001")):
             returns.append(P.build_mark_tutorial_complete_response())
             log("      -> MARK_TUTORIAL_COMPLETE acknowledged")
+        elif rtype == P.RT.ENCOUNTER_TUTORIAL_COMPLETE:
+            try:
+                fields = pb.decode(msg)
+                if (not P.avatar_onboarding_capture(username) or len(fields) != 1
+                        or fields[0]["field"] != 1
+                        or fields[0]["wire"] != pb.WT_VARINT
+                        or fields[0]["value"] not in (1, 4, 7)
+                        or pb.Writer().uint(1, fields[0]["value"]).to_bytes() != msg):
+                    raise ValueError
+            except (IndexError, struct.error, ValueError):
+                returns.append(b"")
+            else:
+                starter = world.add_tutorial_starter(fields[0]["value"])
+                returns.append(pb.Writer()
+                               .uint(1, 1)
+                               .message(2, P.build_pokemon_data(
+                                   starter["pokemon_id"], starter["uid"], starter["cp"],
+                                   extra=starter))
+                               .to_bytes())
+                log(f"      -> ENCOUNTER_TUTORIAL_COMPLETE #{starter['pokemon_id']}")
         elif rtype == P.RT.GET_HATCHED_EGGS:
             import world
             for h in world.check_hatches(P.hatch_species):
