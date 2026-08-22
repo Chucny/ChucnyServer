@@ -56,6 +56,12 @@ def _envelope_latlng(fields):
             struct.unpack("<d", struct.pack("<Q", lo))[0])
 
 
+def capture_request(request_type: int, message: bytes, log) -> None:
+    if os.environ.get("CAPTURE_RPC_REQUESTS") == "1":
+        log(f"[capture] type={request_type} name={P.rt_name(request_type)} "
+            f"message={message.hex()}\n")
+
+
 def _build_returns(reqs, username, log):
     # Everything below reads/writes THIS account's state (saves/<name>.json).
     # Must happen before any world.* call in the request.
@@ -354,6 +360,8 @@ def handle(method, path, query, headers, body, log):
         return 405, {"Content-Type": "text/plain"}, b"method not allowed"
 
     request_id, reqs, fields = P.parse_request_envelope(body)
+    for rtype, message in reqs:
+        capture_request(rtype, message, log)
     username = P.resolve_username(fields) or "Trainer"
     _last_user[0] = username
 
