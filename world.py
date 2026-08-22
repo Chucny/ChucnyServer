@@ -24,6 +24,8 @@ import threading
 import time
 
 import settings as _cfg
+import pb
+
 
 
 # ==============================================================================
@@ -83,6 +85,52 @@ LEVEL_XP = [
     1350000, 1650000, 2000000, 2500000, 3000000, 3750000, 4750000,
     6000000, 7500000, 9500000, 12000000, 15000000, 20000000
 ]
+
+
+def _unpack_badge_thresholds(raw):
+    values, value, shift = [], 0, 0
+    for byte in raw:
+        value |= (byte & 0x7F) << shift
+        if byte & 0x80:
+            shift += 7
+        else:
+            values.append(value)
+            value = shift = 0
+    return tuple(values) if shift == 0 else ()
+
+
+def _load_badge_definitions():
+    try:
+        with open(os.path.join(HERE, "fixtures", "badges",
+                               "game_master_badges_0.29.0.json"),
+                  encoding="utf-8") as fh:
+            fixture = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+    definitions = {}
+    for key, body in fixture.items():
+        if not isinstance(key, str) or not isinstance(body, str):
+            continue
+        try:
+            fields = pb.decode(bytes.fromhex(body))
+        except ValueError:
+            continue
+        badge_type = pb.get(fields, 1, pb.WT_VARINT)
+        max_rank = pb.get(fields, 2, pb.WT_VARINT)
+        packed = pb.get(fields, 3, pb.WT_LEN)
+        thresholds = _unpack_badge_thresholds(packed) if isinstance(packed, bytes) else ()
+        if (type(badge_type) is int and badge_type >= 0
+                and type(max_rank) is int and max_rank >= 0 and thresholds):
+            definitions[key] = {
+                "type": badge_type,
+                "max_rank": max_rank,
+                "thresholds": thresholds,
+            }
+    return definitions
+
+
+BADGE_DEFINITIONS = _load_badge_definitions()
 
 
 # ==============================================================================
@@ -146,6 +194,35 @@ def _hash_pw(password, salt=None):
     return f"{salt}${h}"
 
 
+def _load_badge_counters(raw):
+    if not isinstance(raw, dict):
+        return {}
+    counters = {}
+    for key, value in raw.items():
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(key, str) and value >= 0:
+            counters[key] = value
+    return counters
+
+
+def _load_badge_pending(raw):
+    if not isinstance(raw, list):
+        return []
+    pending = []
+    for value in raw:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            pending.append(value)
+    return pending
+
+
+
 # ==============================================================================
 # Player Entity Model
 # ==============================================================================
@@ -188,6 +265,10 @@ class Player:
         self.PW = ""             # "salt$hash"; empty until the account is claimed
         self.AVATAR = dict(DEFAULT_AVATAR)
         self.CODENAME = ""
+        self.BADGE_PROGRESS = {}
+        self.BADGE_LEVELS = {}
+        self.BADGE_PENDING = []
+
 
         self.APPLIED = []        # active Lucky Egg / Incense
         self.STATS = {
@@ -223,6 +304,10 @@ class Player:
             "max_items": self.MAX_ITEMS,
             "avatar": {str(slot): value for slot, value in self.AVATAR.items()},
             "codename": self.CODENAME,
+            "badge_progress": self.BADGE_PROGRESS,
+            "badge_levels": self.BADGE_LEVELS,
+            "badge_pending": self.BADGE_PENDING,
+
         }
 
 
@@ -319,6 +404,10 @@ class Player:
         for k, v in (d.get("stats") or {}).items():
             if k in self.STATS:
                 self.STATS[k] = v
+
+        self.BADGE_PROGRESS = _load_badge_counters(d.get("badge_progress"))
+        self.BADGE_LEVELS = _load_badge_counters(d.get("badge_levels"))
+        self.BADGE_PENDING = _load_badge_pending(d.get("badge_pending"))
 
         self.CLAIMED_LEVELS = [
             int(x)
@@ -427,6 +516,32 @@ def current():
 
 def save():
     current().save()
+
+
+def record_badge_progress(key, amount):
+    """Add progress for one fixture-defined badge and queue newly reached ranks."""
+    definition = BADGE_DEFINITIONS.get(key)
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
+        return 0
+    if definition is None or amount <= 0:
+        return current().BADGE_LEVELS.get(key, 0)
+
+    p = current()
+    with _lock:
+        progress = p.BADGE_PROGRESS.get(key, 0) + amount
+        p.BADGE_PROGRESS[key] = progress
+        level = min(
+            definition["max_rank"],
+            sum(progress >= threshold for threshold in definition["thresholds"]),
+        )
+        previous = p.BADGE_LEVELS.get(key, 0)
+        if level > previous:
+            p.BADGE_LEVELS[key] = level
+            p.BADGE_PENDING.extend([definition["type"]] * (level - previous))
+    p.save()
+    return level
 
 
 def accounts():
@@ -538,7 +653,8 @@ def has_password(username):
 _FORWARD = {
     "BAG", "CAUGHT", "CANDY", "STARDUST", "XP", "LEVEL", "COINS", "DELETED",
     "POKEDEX", "EGGS", "INCUBATORS", "HATCHED", "TEAM", "BERRIES", "APPLIED",
-    "MAX_POKEMON", "MAX_ITEMS", "CLAIMED_LEVELS", "STATS"
+    "MAX_POKEMON", "MAX_ITEMS", "CLAIMED_LEVELS", "STATS", "BADGE_PROGRESS",
+    "BADGE_LEVELS", "BADGE_PENDING"
 }
 
 

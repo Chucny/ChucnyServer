@@ -2,9 +2,12 @@ import json
 from pathlib import Path
 import unittest
 
+import tempfile
+from unittest.mock import patch
+
 import pb
 import protocol
-
+import world
 
 class BadgeTemplateExtractionTest(unittest.TestCase):
     def test_extracts_only_badge_templates(self):
@@ -35,3 +38,61 @@ class BadgeTemplateExtractionTest(unittest.TestCase):
                       for template_id, body in protocol.extract_badge_templates(game_master.read()).items()}
 
         self.assertEqual(fixture, actual)
+
+
+class BadgeProgressTest(unittest.TestCase):
+    def setUp(self):
+        self.saves = tempfile.TemporaryDirectory()
+        self.saves_dir = patch.object(world, "SAVES_DIR", self.saves.name)
+        self.saves_dir.start()
+        world._players.clear()
+        if hasattr(world._current, "player"):
+            delattr(world._current, "player")
+        self.addCleanup(world._players.clear)
+        self.addCleanup(self.saves_dir.stop)
+        self.addCleanup(self.saves.cleanup)
+
+    def test_decodes_badge_type_rank_and_packed_thresholds(self):
+        capture = world.BADGE_DEFINITIONS["BADGE_CAPTURE_TOTAL"]
+
+        self.assertEqual(capture["type"], 3)
+        self.assertEqual(capture["max_rank"], 4)
+        self.assertEqual(capture["thresholds"], (30, 500, 2000))
+
+    def test_crossing_thresholds_queues_each_new_level_once(self):
+        player = world.use("badges")
+
+        world.record_badge_progress("BADGE_CAPTURE_TOTAL", 30)
+        world.record_badge_progress("BADGE_CAPTURE_TOTAL", 0)
+        world.record_badge_progress("BADGE_CAPTURE_TOTAL", 1970)
+
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_CAPTURE_TOTAL"], 2000)
+        self.assertEqual(player.BADGE_LEVELS["BADGE_CAPTURE_TOTAL"], 3)
+        self.assertEqual(player.BADGE_PENDING, [3, 3, 3])
+
+    def test_progress_and_pending_levels_survive_reload(self):
+        world.use("badges")
+        world.record_badge_progress("BADGE_CAPTURE_TOTAL", 500)
+        world._players.clear()
+        if hasattr(world._current, "player"):
+            delattr(world._current, "player")
+
+        player = world.use("badges")
+
+        self.assertEqual(player.BADGE_PROGRESS, {"BADGE_CAPTURE_TOTAL": 500})
+        self.assertEqual(player.BADGE_LEVELS, {"BADGE_CAPTURE_TOTAL": 2})
+        self.assertEqual(player.BADGE_PENDING, [3, 3])
+
+    def test_reload_discards_negative_badge_state(self):
+        path = Path(self.saves.name) / "badges.json"
+        path.write_text(json.dumps({
+            "badge_progress": {"BADGE_CAPTURE_TOTAL": -1, "other": 2},
+            "badge_levels": {"BADGE_CAPTURE_TOTAL": -1, "other": 2},
+            "badge_pending": [-1, "3", 4],
+        }))
+
+        player = world.use("badges")
+
+        self.assertEqual(player.BADGE_PROGRESS, {"other": 2})
+        self.assertEqual(player.BADGE_LEVELS, {"other": 2})
+        self.assertEqual(player.BADGE_PENDING, [3, 4])
