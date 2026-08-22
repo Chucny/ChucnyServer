@@ -72,6 +72,9 @@ _STARTING_BAG = {
     ITEM_RAZZ_BERRY: 20,
 }
 
+DEFAULT_AVATAR = {2: 1, 3: 1, 4: 1, 5: 1, 6: 0, 7: 1, 8: 0, 9: 1, 10: 1}
+
+
 # Real 2016 XP thresholds (PlayerLevelSettings.required_experience).
 LEVEL_XP = [
     0, 1000, 3000, 6000, 10000, 15000, 21000, 28000, 36000, 45000,
@@ -183,6 +186,8 @@ class Player:
         self.TEAM = 0            # 0 = not chosen yet; set in game at level 5
         self.BERRIES = {}        # encounter_id -> capture multiplier in effect
         self.PW = ""             # "salt$hash"; empty until the account is claimed
+        self.AVATAR = dict(DEFAULT_AVATAR)
+
         self.APPLIED = []        # active Lucky Egg / Incense
         self.STATS = {
             "pokemons_encountered": 0,
@@ -215,7 +220,9 @@ class Player:
             "hatched": self.HATCHED,
             "max_pokemon": self.MAX_POKEMON,
             "max_items": self.MAX_ITEMS,
+            "avatar": {str(slot): value for slot, value in self.AVATAR.items()},
         }
+
 
     def save(self):
         try:
@@ -292,6 +299,17 @@ class Player:
         self.MAX_POKEMON = int(d.get("max_pokemon", 250) or 250)
         self.MAX_ITEMS = int(d.get("max_items", 350) or 350)
 
+
+        saved_avatar = d.get("avatar")
+        if isinstance(saved_avatar, dict):
+            for slot, value in saved_avatar.items():
+                try:
+                    slot = int(slot)
+                except (TypeError, ValueError):
+                    continue
+                if 2 <= slot <= 10 and type(value) is int and 0 <= value <= 255:
+                    self.AVATAR[slot] = value
+
         for k, v in (d.get("stats") or {}).items():
             if k in self.STATS:
                 self.STATS[k] = v
@@ -304,6 +322,18 @@ class Player:
         self.LEVEL = level_for_xp(self.XP)
         if not self.CLAIMED_LEVELS:
             self.CLAIMED_LEVELS = list(range(1, self.LEVEL + 1))
+        return True
+
+    def set_avatar_slots(self, slots: dict[int, int]) -> bool:
+        if (not isinstance(slots, dict) or not slots
+                or any(type(slot) is not int or not 2 <= slot <= 10
+                       or type(value) is not int or not 0 <= value <= 255
+                       for slot, value in slots.items())):
+            return False
+        with _lock:
+            avatar = dict(self.AVATAR)
+            avatar.update(slots)
+            self.AVATAR = avatar
         return True
 
 
@@ -331,6 +361,21 @@ def use(username):
             _players[name] = p
     _current.player = p
     return p
+
+
+def avatar_for(username: str) -> dict[int, int]:
+    """Return an account avatar without switching the current player."""
+    name = username or ""
+    if not name:
+        return dict(DEFAULT_AVATAR)
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return dict(player.AVATAR)
+    player = Player(name)
+    if player.load_from(player.file):
+        return dict(player.AVATAR)
+    return dict(DEFAULT_AVATAR)
 
 
 def current():

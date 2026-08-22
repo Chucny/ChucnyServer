@@ -163,18 +163,18 @@ def _team():
     return _cfg.get("gyms", "team", env="TEAM", cast=int)
 
 
-def build_player_avatar() -> bytes:
-    # Minimal cosmetic avatar; numbers are non-critical (purely visual).
+def build_player_avatar(avatar: dict[int, int] | None = None) -> bytes:
+    slots = _world.DEFAULT_AVATAR if avatar is None else avatar
     return (pb.Writer()
-            .uint(2, 1)   # skin
-            .uint(3, 1)   # hair
-            .uint(4, 1)   # shirt
-            .uint(5, 1)   # pants
-            .uint(6, 0)   # hat
-            .uint(7, 1)   # shoes
-            .uint(8, 0)   # gender (0=male)
-            .uint(9, 1)   # eyes
-            .uint(10, 1)  # backpack
+            .uint(2, slots.get(2, _world.DEFAULT_AVATAR[2]))
+            .uint(3, slots.get(3, _world.DEFAULT_AVATAR[3]))
+            .uint(4, slots.get(4, _world.DEFAULT_AVATAR[4]))
+            .uint(5, slots.get(5, _world.DEFAULT_AVATAR[5]))
+            .uint(6, slots.get(6, _world.DEFAULT_AVATAR[6]))
+            .uint(7, slots.get(7, _world.DEFAULT_AVATAR[7]))
+            .uint(8, slots.get(8, _world.DEFAULT_AVATAR[8]))
+            .uint(9, slots.get(9, _world.DEFAULT_AVATAR[9]))
+            .uint(10, slots.get(10, _world.DEFAULT_AVATAR[10]))
             .to_bytes())
 
 
@@ -218,7 +218,7 @@ def build_player_data(username: str) -> bytes:
     if not avatar_onboarding_capture(username):
         w = (w.uint(PD_TEAM, _team())                 # non-zero so Gyms are usable
              .packed_varints(PD_TUTORIAL, tutorial_state())
-             .message(PD_AVATAR, build_player_avatar()))
+             .message(PD_AVATAR, build_player_avatar(_world.current().AVATAR)))
     return (w.uint(PD_MAX_POKEMON, _storage()[0])
             .uint(PD_MAX_ITEMS, _storage()[1])
             .message(PD_CURRENCIES, build_currency("POKECOIN", _coins()))
@@ -1649,11 +1649,11 @@ def _battle_pokemon_info(pokemon_id, uid, cp, hp, energy=0, extra=None,
             .to_bytes())
 
 
-def _battle_participant(pokemon_id, uid, cp, hp, trainer, level) -> bytes:
+def _battle_participant(pokemon_id, uid, cp, hp, trainer, level, avatar=None) -> bytes:
     """BattleParticipant { active_pokemon=1, trainer_public_profile=2,
     reverse_pokemon=3, defeated_pokemon=4 }."""
     profile = (pb.Writer().string(1, trainer).int_(2, level)
-               .message(3, build_player_avatar()).to_bytes())
+               .message(3, build_player_avatar(avatar)).to_bytes())
     return (pb.Writer()
             .message(1, _battle_pokemon_info(pokemon_id, uid, cp, hp))
             .message(2, profile)
@@ -1742,7 +1742,7 @@ def build_start_gym_battle_response(gym_id, attacker_uids, defender_uid, now_ms)
                           "start": now_ms, "player": world.current().username}
     lvl, _xp = world.stats()
     me = _battle_participant(atk["pokemon_id"], atk["uid"], atk["cp"], ahp,
-                             world.current().username, lvl)
+                             world.current().username, lvl, world.current().AVATAR)
     # A raid boss is not a person -- report level -1 so nobody mistakes "raid"
     # for a real trainer who parked a Mewtwo in every gym.
     def_lvl = -1 if is_raid else lvl
@@ -1767,7 +1767,9 @@ def build_start_gym_battle_response(gym_id, attacker_uids, defender_uid, now_ms)
             .string(4, bid)
             .message(5, _battle_participant(defender["pokemon_id"], defender["uid"],
                                             defender["cp"], dhp,
-                                            defender.get("trainer", "Rival"), def_lvl))
+                                            defender.get("trainer", "Rival"), def_lvl,
+                                            world.avatar_for(defender.get("owner")
+                                                             or defender.get("trainer"))))
             .message(6, log)
             .to_bytes())
 
@@ -2020,7 +2022,8 @@ def build_gym_membership(m) -> bytes:
     profile = (pb.Writer()
                .string(1, m.get("trainer") or "Trainer")
                .int_(2, lvl)
-               .message(3, build_player_avatar())
+               .message(3, build_player_avatar(world.avatar_for(m.get("owner")
+                                                                or m.get("trainer"))))
                .to_bytes())
     return (pb.Writer()
             .message(1, build_pokemon_data(m["pokemon_id"], m["uid"], m["cp"]))

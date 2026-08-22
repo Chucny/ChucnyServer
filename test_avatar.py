@@ -5,6 +5,8 @@ from unittest.mock import patch
 import rpc
 import pb
 import protocol as P
+import world
+
 
 
 
@@ -100,3 +102,24 @@ class AvatarOnboardingCompletionTest(unittest.TestCase):
             replies = rpc._build_returns(
                 [(406, bytes.fromhex("0a01001001"))], "Trainer", lambda _: None)
         self.assertEqual(pb.get(pb.decode(replies[0]), 1), 1)
+
+
+class AvatarPersistenceTest(unittest.TestCase):
+    def test_avatar_slots_survive_save_reload_and_player_data(self):
+        player = world.use("avatar-persist-test")
+        self.assertTrue(player.set_avatar_slots({3: 5, 6: 1, 7: 2, 9: 2}))
+        player.save()
+
+        world._players.clear()
+        reloaded = world.use("avatar-persist-test")
+        self.assertEqual(reloaded.AVATAR[3], 5)
+        self.assertEqual(reloaded.AVATAR[6], 1)
+        avatar = pb.get(pb.decode(P.build_player_data("avatar-persist-test")),
+                        P.PD_AVATAR, pb.WT_LEN)
+        self.assertEqual(pb.get(pb.decode(avatar), 3), 5)
+
+    def test_rejected_avatar_slots_leave_saved_avatar_unchanged(self):
+        player = world.use("avatar-reject-test")
+        before = dict(player.AVATAR)
+        self.assertFalse(player.set_avatar_slots({11: 1}))
+        self.assertEqual(player.AVATAR, before)
