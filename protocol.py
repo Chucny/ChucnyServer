@@ -140,6 +140,16 @@ GP_PLAYER_DATA = 2
 # Mark the whole new-user tutorial as already finished so the client skips
 # straight to the map. Extra/unknown enum values are ignored by the client.
 TUTORIAL_COMPLETE = [0, 1, 2, 3, 4, 5, 6, 7]
+TUTORIAL_AVATAR_SELECTION = 1
+TUTORIAL_FOR_AVATAR_CAPTURE = [0, 2, 3, 4, 5, 6, 7]
+
+
+def tutorial_state():
+    if os.environ.get("AVATAR_TUTORIAL_CAPTURE") == "1":
+        return TUTORIAL_FOR_AVATAR_CAPTURE
+    return TUTORIAL_COMPLETE
+
+
 
 # TeamColor: 0=NEUTRAL, 1=BLUE(Mystic), 2=RED(Valor), 3=YELLOW(Instinct).
 # Must be non-zero or the client refuses Gym interaction ("join a team first").
@@ -200,7 +210,7 @@ def build_player_data(username: str) -> bytes:
          .uint(PD_CREATION_MS, int(time.time() * 1000) - 86_400_000)
          .string(PD_USERNAME, username)
          .uint(PD_TEAM, _team())                     # non-zero so Gyms are usable
-         .packed_varints(PD_TUTORIAL, TUTORIAL_COMPLETE)
+         .packed_varints(PD_TUTORIAL, tutorial_state())
          .message(PD_AVATAR, build_player_avatar())
          .uint(PD_MAX_POKEMON, _storage()[0])
          .uint(PD_MAX_ITEMS, _storage()[1])

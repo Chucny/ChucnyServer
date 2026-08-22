@@ -45,3 +45,15 @@ class AvatarCaptureTest(unittest.TestCase):
         self.assertIn("[capture] type=8 name=UNKNOWN_8 message=0a021001\n", log)
         self.assertNotIn("raw RequestEnvelope", log)
         self.assertNotIn("outer-auth-token", log)
+
+
+class AvatarTutorialTest(unittest.TestCase):
+    def test_capture_mode_omits_only_avatar_selection(self):
+        with patch.dict("os.environ", {"AVATAR_TUTORIAL_CAPTURE": "1"}, clear=False):
+            fields = pb.decode(P.build_player_data("avatar-test"))
+        self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]), [0, 2, 3, 4, 5, 6, 7])
+
+    def test_normal_mode_keeps_existing_tutorial_state(self):
+        with patch.dict("os.environ", {"AVATAR_TUTORIAL_CAPTURE": "0"}, clear=False):
+            fields = pb.decode(P.build_player_data("avatar-test"))
+        self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]), [0, 1, 2, 3, 4, 5, 6, 7])
