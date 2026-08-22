@@ -97,15 +97,19 @@ class AvatarTutorialTest(unittest.TestCase):
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]), [0, 1, 2, 3, 4, 5, 6, 7])
 
     def test_capture_user_leaves_onboarding_after_choosing_a_team(self):
+        import tempfile
+
         env = {
             "AVATAR_ONBOARDING_CAPTURE": "1",
             "AVATAR_ONBOARDING_CAPTURE_USER": "AvatarCapture",
         }
-        player = world.use("AvatarCapture")
-        player.TEAM = 2
-        player.save()
-        with patch.dict("os.environ", env, clear=False):
-            fields = pb.decode(P.build_player_data("AvatarCapture"))
+        with tempfile.TemporaryDirectory() as saves, patch.object(world, "SAVES_DIR", saves):
+            world._players.clear()
+            player = world.use("AvatarCapture")
+            player.TEAM = 2
+            with patch.dict("os.environ", env, clear=False):
+                fields = pb.decode(P.build_player_data("AvatarCapture"))
+            world._players.clear()
 
         self.assertEqual(pb.get(fields, P.PD_TEAM), 2)
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
