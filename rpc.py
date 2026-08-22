@@ -262,13 +262,18 @@ def _build_returns(reqs, username, log):
                 returns.append(b"")
             else:
                 starter = world.add_tutorial_starter(fields[0]["value"])
-                returns.append(pb.Writer()
-                               .uint(1, 1)
-                               .message(2, P.build_pokemon_data(
-                                   starter["pokemon_id"], starter["uid"], starter["cp"],
-                                   extra=starter))
-                               .to_bytes())
-                log(f"      -> ENCOUNTER_TUTORIAL_COMPLETE #{starter['pokemon_id']}")
+                caught = world.caught()
+                if (len(caught) != 1 or caught[0]["uid"] != starter["uid"]
+                        or starter["pokemon_id"] != fields[0]["value"]):
+                    returns.append(b"")
+                else:
+                    returns.append(pb.Writer()
+                                   .uint(1, 1)
+                                   .message(2, P.build_pokemon_data(
+                                       starter["pokemon_id"], starter["uid"], starter["cp"],
+                                       extra=starter))
+                                   .to_bytes())
+                    log(f"      -> ENCOUNTER_TUTORIAL_COMPLETE #{starter['pokemon_id']}")
         elif rtype == P.RT.GET_HATCHED_EGGS:
             import world
             for h in world.check_hatches(P.hatch_species):

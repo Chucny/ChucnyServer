@@ -168,6 +168,14 @@ class TutorialStarterRpcTest(unittest.TestCase):
     def test_non_capture_user_selection_is_empty_and_does_not_create_a_starter(self):
         self.assertEqual(self._select("OtherTrainer", bytes.fromhex("0804")), [b""])
         self.assertEqual(world.current().CAUGHT, [])
+
+    def test_existing_unrelated_pokemon_rejects_selection_without_mutation(self):
+        player = world.use("TutorialStarter")
+        world.add_caught(world.new_uid(25), 25, 100)
+        before = player.snapshot()
+
+        self.assertEqual(self._select("TutorialStarter", bytes.fromhex("0804")), [b""])
+        self.assertEqual(world.current().snapshot(), before)
 class AvatarPersistenceTest(unittest.TestCase):
     def test_avatar_slots_survive_save_reload_and_player_data(self):
         player = world.use("avatar-persist-test")
