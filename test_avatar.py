@@ -116,8 +116,34 @@ class AvatarTutorialTest(unittest.TestCase):
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
                          [0, 1, 2, 3, 4, 5, 6, 7])
 
+    def setUp(self):
+        import tempfile
+
+        self.saves = tempfile.TemporaryDirectory()
+        self.saves_dir = patch.object(world, "SAVES_DIR", self.saves.name)
+        self.saves_dir.start()
+        world._players.clear()
+        if hasattr(world._current, "player"):
+            delattr(world._current, "player")
+        self.addCleanup(world._players.clear)
+        self.addCleanup(self.saves_dir.stop)
+        self.addCleanup(self.saves.cleanup)
+
 
 class AvatarOnboardingCaptureTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.saves = tempfile.TemporaryDirectory()
+        self.saves_dir = patch.object(world, "SAVES_DIR", self.saves.name)
+        self.saves_dir.start()
+        world._players.clear()
+        if hasattr(world._current, "player"):
+            delattr(world._current, "player")
+        self.addCleanup(world._players.clear)
+        self.addCleanup(self.saves_dir.stop)
+        self.addCleanup(self.saves.cleanup)
+
     def test_capture_user_receives_uninitialized_player_data(self):
         env = {
             "AVATAR_ONBOARDING_CAPTURE": "1",
@@ -148,6 +174,19 @@ class AvatarOnboardingCompletionTest(unittest.TestCase):
     def test_legal_tutorial_completion_returns_success(self):
         response = P.build_mark_tutorial_complete_response()
         self.assertEqual(pb.get(pb.decode(response), 1), 1)
+
+    def setUp(self):
+        import tempfile
+
+        self.saves = tempfile.TemporaryDirectory()
+        self.saves_dir = patch.object(world, "SAVES_DIR", self.saves.name)
+        self.saves_dir.start()
+        world._players.clear()
+        if hasattr(world._current, "player"):
+            delattr(world._current, "player")
+        self.addCleanup(world._players.clear)
+        self.addCleanup(self.saves_dir.stop)
+        self.addCleanup(self.saves.cleanup)
 
     def test_only_capture_user_accepts_the_observed_legal_completion(self):
         env = {
