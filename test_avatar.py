@@ -118,6 +118,18 @@ class AvatarPersistenceTest(unittest.TestCase):
                         P.PD_AVATAR, pb.WT_LEN)
         self.assertEqual(pb.get(pb.decode(avatar), 3), 5)
 
+    def test_player_data_uses_named_account_avatar_not_current_account(self):
+        alice = world.use("avatar-alice-test")
+        self.assertTrue(alice.set_avatar_slots({3: 5}))
+        alice.save()
+        bob = world.use("avatar-bob-test")
+        self.assertTrue(bob.set_avatar_slots({3: 2}))
+        bob.save()
+
+        avatar = pb.get(pb.decode(P.build_player_data("avatar-alice-test")),
+                        P.PD_AVATAR, pb.WT_LEN)
+        self.assertEqual(pb.get(pb.decode(avatar), 3), 5)
+
     def test_rejected_avatar_slots_leave_saved_avatar_unchanged(self):
         player = world.use("avatar-reject-test")
         before = dict(player.AVATAR)

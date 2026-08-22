@@ -218,7 +218,7 @@ def build_player_data(username: str) -> bytes:
     if not avatar_onboarding_capture(username):
         w = (w.uint(PD_TEAM, _team())                 # non-zero so Gyms are usable
              .packed_varints(PD_TUTORIAL, tutorial_state())
-             .message(PD_AVATAR, build_player_avatar(_world.current().AVATAR)))
+             .message(PD_AVATAR, build_player_avatar(_world.avatar_for(username))))
     return (w.uint(PD_MAX_POKEMON, _storage()[0])
             .uint(PD_MAX_ITEMS, _storage()[1])
             .message(PD_CURRENCIES, build_currency("POKECOIN", _coins()))
