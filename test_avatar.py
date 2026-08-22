@@ -57,3 +57,30 @@ class AvatarTutorialTest(unittest.TestCase):
         with patch.dict("os.environ", {"AVATAR_TUTORIAL_CAPTURE": "0"}, clear=False):
             fields = pb.decode(P.build_player_data("avatar-test"))
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]), [0, 1, 2, 3, 4, 5, 6, 7])
+
+
+class AvatarOnboardingCaptureTest(unittest.TestCase):
+    def test_capture_user_receives_uninitialized_player_data(self):
+        env = {
+            "AVATAR_ONBOARDING_CAPTURE": "1",
+            "AVATAR_ONBOARDING_CAPTURE_USER": "AvatarCapture",
+        }
+        with patch.dict("os.environ", env, clear=False):
+            fields = pb.decode(P.build_player_data("AvatarCapture"))
+
+        self.assertIsNone(pb.get(fields, P.PD_TEAM))
+        self.assertEqual(pb.get_all(fields, P.PD_TUTORIAL), [])
+        self.assertIsNone(pb.get(fields, P.PD_AVATAR, pb.WT_LEN))
+
+    def test_other_users_keep_the_normal_player_data(self):
+        env = {
+            "AVATAR_ONBOARDING_CAPTURE": "1",
+            "AVATAR_ONBOARDING_CAPTURE_USER": "AvatarCapture",
+        }
+        with patch.dict("os.environ", env, clear=False):
+            fields = pb.decode(P.build_player_data("Trainer"))
+
+        self.assertIsNotNone(pb.get(fields, P.PD_TEAM))
+        self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
+                         [0, 1, 2, 3, 4, 5, 6, 7])
+        self.assertIsNotNone(pb.get(fields, P.PD_AVATAR, pb.WT_LEN))

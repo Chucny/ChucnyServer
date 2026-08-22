@@ -150,6 +150,11 @@ def tutorial_state():
     return TUTORIAL_COMPLETE
 
 
+def avatar_onboarding_capture(username: str) -> bool:
+    return (os.environ.get("AVATAR_ONBOARDING_CAPTURE") == "1"
+            and username == os.environ.get("AVATAR_ONBOARDING_CAPTURE_USER"))
+
+
 
 # TeamColor: 0=NEUTRAL, 1=BLUE(Mystic), 2=RED(Valor), 3=YELLOW(Instinct).
 # Must be non-zero or the client refuses Gym interaction ("join a team first").
@@ -208,15 +213,16 @@ def _storage():
 def build_player_data(username: str) -> bytes:
     w = (pb.Writer()
          .uint(PD_CREATION_MS, int(time.time() * 1000) - 86_400_000)
-         .string(PD_USERNAME, username)
-         .uint(PD_TEAM, _team())                     # non-zero so Gyms are usable
-         .packed_varints(PD_TUTORIAL, tutorial_state())
-         .message(PD_AVATAR, build_player_avatar())
-         .uint(PD_MAX_POKEMON, _storage()[0])
-         .uint(PD_MAX_ITEMS, _storage()[1])
-         .message(PD_CURRENCIES, build_currency("POKECOIN", _coins()))
-         .message(PD_CURRENCIES, build_currency("STARDUST", _stardust())))
-    return w.to_bytes()
+         .string(PD_USERNAME, username))
+    if not avatar_onboarding_capture(username):
+        w = (w.uint(PD_TEAM, _team())                 # non-zero so Gyms are usable
+             .packed_varints(PD_TUTORIAL, tutorial_state())
+             .message(PD_AVATAR, build_player_avatar()))
+    return (w.uint(PD_MAX_POKEMON, _storage()[0])
+            .uint(PD_MAX_ITEMS, _storage()[1])
+            .message(PD_CURRENCIES, build_currency("POKECOIN", _coins()))
+            .message(PD_CURRENCIES, build_currency("STARDUST", _stardust()))
+            .to_bytes())
 
 
 def build_get_player_response(username: str) -> bytes:
