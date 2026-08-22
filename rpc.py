@@ -217,6 +217,11 @@ def _build_returns(reqs, username, log):
             log(f"      -> SET_PLAYER_TEAM -> " +
                 (f"joined {names.get(team, team)}" if st == 1 else
                  "team was already chosen" if st == 2 else "failed"))
+        elif (rtype == P.RT.MARK_TUTORIAL_COMPLETE
+              and P.avatar_onboarding_capture(username)
+              and msg == bytes.fromhex("0a01001001")):
+            returns.append(P.build_mark_tutorial_complete_response())
+            log("      -> MARK_TUTORIAL_COMPLETE acknowledged")
         elif rtype == P.RT.GET_HATCHED_EGGS:
             import world
             for h in world.check_hatches(P.hatch_species):

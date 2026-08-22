@@ -84,3 +84,19 @@ class AvatarOnboardingCaptureTest(unittest.TestCase):
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
                          [0, 1, 2, 3, 4, 5, 6, 7])
         self.assertIsNotNone(pb.get(fields, P.PD_AVATAR, pb.WT_LEN))
+
+
+class AvatarOnboardingCompletionTest(unittest.TestCase):
+    def test_legal_tutorial_completion_returns_success(self):
+        response = P.build_mark_tutorial_complete_response()
+        self.assertEqual(pb.get(pb.decode(response), 1), 1)
+
+    def test_only_capture_user_accepts_the_observed_legal_completion(self):
+        env = {
+            "AVATAR_ONBOARDING_CAPTURE": "1",
+            "AVATAR_ONBOARDING_CAPTURE_USER": "Trainer",
+        }
+        with patch.dict("os.environ", env, clear=False):
+            replies = rpc._build_returns(
+                [(406, bytes.fromhex("0a01001001"))], "Trainer", lambda _: None)
+        self.assertEqual(pb.get(pb.decode(replies[0]), 1), 1)

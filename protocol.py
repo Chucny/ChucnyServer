@@ -109,6 +109,7 @@ class RT:
     GET_INCENSE_POKEMON = 142
     ADD_FORT_MODIFIER = 144
     SET_PLAYER_TEAM = 405
+    MARK_TUTORIAL_COMPLETE = 406
     USE_ITEM_REVIVE = 116
     RECYCLE_INVENTORY_ITEM = 137
     GET_MAP_OBJECTS = 106
@@ -230,6 +231,10 @@ def build_get_player_response(username: str) -> bytes:
             .bool_(GP_SUCCESS, True)
             .message(GP_PLAYER_DATA, build_player_data(username))
             .to_bytes())
+
+
+def build_mark_tutorial_complete_response() -> bytes:
+    return pb.Writer().bool_(1, True).to_bytes()
 
 
 # ------------------------------------------------------------- GET_INVENTORY
