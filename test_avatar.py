@@ -135,3 +135,57 @@ class AvatarPersistenceTest(unittest.TestCase):
         before = dict(player.AVATAR)
         self.assertFalse(player.set_avatar_slots({11: 1}))
         self.assertEqual(player.AVATAR, before)
+
+
+class SetAvatarRpcTest(unittest.TestCase):
+    REQUEST = bytes.fromhex("12081805300138024802")
+
+    def test_set_avatar_updates_only_active_player_and_returns_success(self):
+        world.use("avatar-rpc-other")
+        other_before = dict(world.current().AVATAR)
+
+        replies = rpc._build_returns([(404, self.REQUEST)], "avatar-rpc-active",
+                                     lambda _: None)
+
+        self.assertEqual(pb.get(pb.decode(replies[0]), 1), 1)
+        self.assertEqual(world.current().AVATAR[3], 5)
+        self.assertEqual(world.current().AVATAR[6], 1)
+        self.assertEqual(world.use("avatar-rpc-other").AVATAR, other_before)
+
+    def test_set_avatar_rejects_malformed_body_without_mutation(self):
+        world.use("avatar-rpc-malformed")
+        before = dict(world.current().AVATAR)
+
+        replies = rpc._build_returns([(404, b"\x12\x01\x5a")],
+                                     "avatar-rpc-malformed", lambda _: None)
+
+        self.assertEqual(replies, [b""])
+        self.assertEqual(world.current().AVATAR, before)
+
+    def test_set_avatar_rejects_invalid_slot_wire_and_value_without_mutation(self):
+        cases = (
+            b"\x12\x02\x12\x00",              # slot 2, length-delimited
+            b"\x12\x03\x18\x80\x02",          # slot 3, value 256
+            b"\x12\x02\x58\x01",              # unsupported slot 11
+            b"\x12\x02\x18\x05\x13",          # malformed trailing group
+        )
+        for body in cases:
+            with self.subTest(body=body.hex()):
+                world.use("avatar-rpc-invalid")
+                before = dict(world.current().AVATAR)
+
+                replies = rpc._build_returns([(404, body)], "avatar-rpc-invalid",
+                                             lambda _: None)
+
+                self.assertEqual(replies, [b""])
+                self.assertEqual(world.current().AVATAR, before)
+
+    def test_set_avatar_rejects_truncated_fixed_width_outer_body(self):
+        world.use("avatar-rpc-truncated")
+        before = dict(world.current().AVATAR)
+
+        replies = rpc._build_returns([(404, b"\x11")],
+                                     "avatar-rpc-truncated", lambda _: None)
+
+        self.assertEqual(replies, [b""])
+        self.assertEqual(world.current().AVATAR, before)

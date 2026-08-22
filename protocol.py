@@ -108,6 +108,7 @@ class RT:
     USE_INCENSE = 141
     GET_INCENSE_POKEMON = 142
     ADD_FORT_MODIFIER = 144
+    SET_AVATAR = 404
     SET_PLAYER_TEAM = 405
     MARK_TUTORIAL_COMPLETE = 406
     USE_ITEM_REVIVE = 116
@@ -235,6 +236,10 @@ def build_get_player_response(username: str) -> bytes:
 
 def build_mark_tutorial_complete_response() -> bytes:
     return pb.Writer().bool_(1, True).to_bytes()
+
+
+def build_set_avatar_response() -> bytes:
+    return pb.Writer().uint(1, 1).to_bytes()
 
 
 # ------------------------------------------------------------- GET_INVENTORY

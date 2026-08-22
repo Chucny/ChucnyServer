@@ -1,0 +1,14 @@
+{
+  "request_type": 404,
+  "request_hex": "12081805300138024802",
+  "decoded_outer": [
+    {"field": 2, "wire": "length-delimited", "hex": "1805300138024802"}
+  ],
+  "decoded_inner": [
+    {"field": 3, "wire": "varint", "value": 5},
+    {"field": 6, "wire": "varint", "value": 1},
+    {"field": 7, "wire": "varint", "value": 2},
+    {"field": 9, "wire": "varint", "value": 2}
+  ],
+  "response_hex": "0801"
+}

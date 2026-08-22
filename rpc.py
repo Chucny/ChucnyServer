@@ -208,6 +208,32 @@ def _build_returns(reqs, username, log):
             log(f"      -> USE_ITEM_CAPTURE item={iid} encounter={eid} -> " +
                 ("Razz Berry used, next ball is much likelier to hold"
                  if ok else "couldn't use that item"))
+        elif rtype == P.RT.SET_AVATAR:
+            try:
+                outer = pb.decode(msg)
+                if (len(outer) != 1 or outer[0]["field"] != 2
+                        or outer[0]["wire"] != pb.WT_LEN):
+                    raise ValueError
+                if pb.Writer().bytes_(2, outer[0]["value"]).to_bytes() != msg:
+                    raise ValueError
+                slots = {}
+                canonical = pb.Writer()
+                for field in pb.decode(outer[0]["value"]):
+                    slot, value = field["field"], field["value"]
+                    if (field["wire"] != pb.WT_VARINT or not 2 <= slot <= 10
+                            or not 0 <= value <= 255 or slot in slots):
+                        raise ValueError
+                    slots[slot] = value
+                    canonical.uint(slot, value)
+                if (canonical.to_bytes() != outer[0]["value"]
+                        or not world.current().set_avatar_slots(slots)):
+                    raise ValueError
+            except (IndexError, struct.error, ValueError):
+                returns.append(b"")
+            else:
+                world.current().save()
+                returns.append(P.build_set_avatar_response())
+                log("      -> SET_AVATAR success")
         elif rtype == P.RT.SET_PLAYER_TEAM:
             team = P.parse_set_player_team(msg)
             r = P.build_set_player_team_response(team, username)
