@@ -497,7 +497,8 @@ def use(username):
     name = username or "player"
     with _lock:
         p = _players.get(name)
-        if p is None:
+        loaded = p is None
+        if loaded:
             p = Player(name)
             path = os.path.join(SAVES_DIR, _safe_name(name) + ".json")
             if os.path.exists(path):
@@ -511,6 +512,8 @@ def use(username):
                 p.save()
             _players[name] = p
     _current.player = p
+    if loaded:
+        _backfill_legacy_badge_progress()
     return p
 
 
@@ -573,7 +576,7 @@ def record_badge_progress(key, amount):
         amount = float(amount)
     except (TypeError, ValueError):
         return 0
-    if definition is None or not math.isfinite(amount) or amount <= 0:
+    if definition is None or not math.isfinite(amount) or amount < 0:
         return current().BADGE_LEVELS.get(key, 0)
 
     p = current()
@@ -590,6 +593,27 @@ def record_badge_progress(key, amount):
             p.BADGE_PENDING.extend([definition["type"]] * (level - previous))
     p.save()
     return level
+
+def _backfill_legacy_badge_progress():
+    """Bring fixture-backed aggregate badges up to their saved stat counters."""
+    p = current()
+    for key, stat in (
+        ("BADGE_CAPTURE_TOTAL", "pokemons_captured"),
+        ("BADGE_POKEDEX_ENTRIES", "unique_pokedex_entries"),
+        ("BADGE_POKESTOPS_VISITED", "poke_stop_visits"),
+        ("BADGE_TRAVEL_KM", "km_walked"),
+    ):
+        try:
+            value = float(p.STATS[stat])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value < 0:
+            continue
+        progress = p.BADGE_PROGRESS.get(key, 0)
+        if value > progress:
+            record_badge_progress(key, value - progress)
+        elif key in p.BADGE_PROGRESS:
+            record_badge_progress(key, 0)
 
 
 def drain_badge_pending():

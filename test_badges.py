@@ -104,6 +104,53 @@ class BadgeProgressTest(unittest.TestCase):
         self.assertEqual(player.BADGE_LEVELS, {"BADGE_CAPTURE_TOTAL": 2})
         self.assertEqual(player.BADGE_PENDING, [3, 3])
 
+    def test_load_backfills_legacy_stats_and_queues_each_level_once(self):
+        path = Path(self.saves.name) / "badges.json"
+        path.write_text(json.dumps({
+            "stats": {
+                "pokemons_captured": 500,
+                "unique_pokedex_entries": 50,
+                "poke_stop_visits": 1000,
+                "km_walked": 100,
+            },
+        }))
+
+        player = world.use("badges")
+
+        self.assertEqual(player.BADGE_PROGRESS, {
+            "BADGE_CAPTURE_TOTAL": 500,
+            "BADGE_POKEDEX_ENTRIES": 50,
+            "BADGE_POKESTOPS_VISITED": 1000,
+            "BADGE_TRAVEL_KM": 100,
+        })
+        self.assertEqual(player.BADGE_LEVELS, {
+            "BADGE_CAPTURE_TOTAL": 2,
+            "BADGE_POKEDEX_ENTRIES": 2,
+            "BADGE_POKESTOPS_VISITED": 2,
+            "BADGE_TRAVEL_KM": 2,
+        })
+        self.assertEqual(world.drain_badge_pending(), [3, 3, 2, 2, 8, 8, 1, 1])
+
+        world._players.clear()
+        delattr(world._current, "player")
+        world.use("badges")
+
+        self.assertEqual(world.drain_badge_pending(), [])
+
+    def test_load_keeps_badge_progress_ahead_of_legacy_stats(self):
+        path = Path(self.saves.name) / "badges.json"
+        path.write_text(json.dumps({
+            "stats": {"pokemons_captured": 500},
+            "badge_progress": {"BADGE_CAPTURE_TOTAL": 2000},
+            "badge_levels": {"BADGE_CAPTURE_TOTAL": 3},
+        }))
+
+        player = world.use("badges")
+
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_CAPTURE_TOTAL"], 2000)
+        self.assertEqual(player.BADGE_LEVELS["BADGE_CAPTURE_TOTAL"], 3)
+        self.assertEqual(world.drain_badge_pending(), [])
+
     def test_reload_discards_negative_badge_state(self):
         path = Path(self.saves.name) / "badges.json"
         path.write_text(json.dumps({
