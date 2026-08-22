@@ -1541,6 +1541,25 @@ def _evo_table():
         _EVO = table
     return _EVO
 
+def extract_badge_templates(data: bytes) -> dict[str, bytes]:
+    badges = {}
+    for raw_template in pb.get_all(pb.decode(data), 2):
+        template = pb.decode(raw_template)
+        raw_id = pb.get(template, 1, pb.WT_LEN)
+        if not isinstance(raw_id, bytes):
+            continue
+        try:
+            template_id = raw_id.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "BADGE" not in template_id:
+            continue
+        for field in template:
+            if field["field"] != 1 and field["wire"] == pb.WT_LEN and field["value"]:
+                badges[template_id] = field["value"]
+                break
+    return badges
+
 
 def pokemon_family(pokemon_id):
     return _evo_table().get(pokemon_id, {}).get("family", pokemon_id)
