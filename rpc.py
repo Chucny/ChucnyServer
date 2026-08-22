@@ -58,8 +58,9 @@ def _envelope_latlng(fields):
 
 def capture_request(request_type: int, message: bytes, log) -> None:
     if os.environ.get("CAPTURE_RPC_REQUESTS") == "1":
+        payload = "<redacted>" if request_type == P.RT.SET_AVATAR else message.hex()
         log(f"[capture] type={request_type} name={P.rt_name(request_type)} "
-            f"message={message.hex()}\n")
+            f"message={payload}\n")
 
 
 def _build_returns(reqs, username, log):

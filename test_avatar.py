@@ -21,6 +21,15 @@ class AvatarCaptureTest(unittest.TestCase):
         self.assertNotIn("auth", output.getvalue().lower())
         self.assertNotIn("ticket", output.getvalue().lower())
 
+    def test_capture_redacts_set_avatar_payload(self):
+        with patch.dict("os.environ", {"CAPTURE_RPC_REQUESTS": "1"}, clear=False):
+            output = io.StringIO()
+            rpc.capture_request(P.RT.SET_AVATAR,
+                                bytes.fromhex("12081805300138024802"), output.write)
+
+        self.assertEqual(output.getvalue(),
+                         "[capture] type=404 name=SET_AVATAR message=<redacted>\n")
+
     def test_capture_mode_skips_envelope_logging(self):
         request = (pb.Writer()
                    .uint(P.REQ_TYPE, 8)
