@@ -110,6 +110,7 @@ class AvatarTutorialTest(unittest.TestCase):
             with patch.dict("os.environ", env, clear=False):
                 fields = pb.decode(P.build_player_data("AvatarCapture"))
             world._players.clear()
+            delattr(world._current, "player")
 
         self.assertEqual(pb.get(fields, P.PD_TEAM), 2)
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
