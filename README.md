@@ -1,6 +1,7 @@
 ## ChucnyServer
 
-<img src="01_SCROT.png"></img>
+<img src="01_SCROT.png" style="width:500px"></img><br>
+<img src="screenshots/03_SCROT" style="width: 200px;"></img><img src="screenshots/02_SCROT" style="width: 200px;"></img>
 
 ### 📁 Overview
 **ChucnyServer** is a custom **MITM** (man in the middle) **0.29.0 Pokemon GO server** made in Python. It is a modified version of Pokemon-GO-Private-Server made by @mobraxton5-ux<br>
