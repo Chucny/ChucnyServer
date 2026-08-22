@@ -20,8 +20,8 @@ class BadgeTemplateExtractionTest(unittest.TestCase):
         first_body = pb.Writer().uint(1, 7).to_bytes()
         later_body = pb.Writer().uint(1, 100).to_bytes()
         badge = (pb.Writer().string(1, "BADGE_CAPTURE_TOTAL")
-                 .message(2, first_body)
-                 .message(9, later_body)
+                 .message(9, first_body)
+                 .message(2, later_body)
                  .to_bytes())
 
         self.assertEqual(protocol.extract_badge_templates(pb.Writer().message(2, badge).to_bytes()),
