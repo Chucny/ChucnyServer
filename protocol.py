@@ -1446,7 +1446,7 @@ def build_catch_pokemon_response(encounter_id, pokeball, hit, now_ms,
     seed = (int(encounter_id) * 0x9E3779B97F4A7C15) ^ (int(now_ms) * 0xC2B2AE3D27D4EB4F)
     seed = (seed ^ (seed >> 29)) & 0x7FFFFFFFFFFFFFFF
     rnd = _random.Random(seed)
-    if rnd.random() > chance:
+    if world.current().STATS["pokemons_captured"] > 0 and rnd.random() > chance:
         world.berry_mult(encounter_id, consume=True)      # the berry is used up
         flee = _cfg.get("catching", "flee_chance", cast=float) / max(1.0, mult)
         if rnd.random() < flee:

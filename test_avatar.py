@@ -198,3 +198,54 @@ class SetAvatarRpcTest(unittest.TestCase):
 
         self.assertEqual(replies, [b""])
         self.assertEqual(world.current().AVATAR, before)
+
+
+class _HalfRandom:
+    def random(self):
+        return 0.5
+
+
+class TutorialCatchGuaranteeTest(unittest.TestCase):
+    def setUp(self):
+        self.player = world.Player("tutorial-catch-test")
+        self.current_player = patch.object(world, "current", return_value=self.player)
+        self.current_player.start()
+        self.save_player = patch.object(world.Player, "save")
+        self.save_player.start()
+        self.addCleanup(self.save_player.stop)
+        self.addCleanup(self.current_player.stop)
+
+    def _remember_spawn(self, encounter_id):
+        world.remember_spawn(encounter_id, 25, 0.0, 0.0, 100, 1, 2_000_000)
+        self.addCleanup(world.remove_spawn, encounter_id)
+        self.addCleanup(world.DESPAWNED.pop, encounter_id, None)
+        self.addCleanup(world.BONUS_SPAWNS.pop, self.player.username, None)
+
+    def _catch_with_zero_chance(self, encounter_id):
+        with (patch.object(P, "catch_chance", return_value=0.0),
+              patch.object(P._random, "Random", return_value=_HalfRandom())):
+            return P.build_catch_pokemon_response(
+                encounter_id, P.ITEM_POKE_BALL, True, 1_000_000)
+
+    def test_first_valid_hit_succeeds_at_zero_capture_probability(self):
+        encounter_id = 9_001
+        self._remember_spawn(encounter_id)
+        balls_before = self.player.BAG[P.ITEM_POKE_BALL]
+
+        response = self._catch_with_zero_chance(encounter_id)
+
+        self.assertEqual(pb.get(pb.decode(response), 1), 1)
+        self.assertEqual(self.player.BAG[P.ITEM_POKE_BALL], balls_before - 1)
+        self.assertEqual(self.player.STATS["pokemons_captured"], 1)
+
+    def test_later_hit_escapes_at_zero_capture_probability(self):
+        first_encounter_id = 9_002
+        self._remember_spawn(first_encounter_id)
+        self.assertEqual(pb.get(pb.decode(
+            self._catch_with_zero_chance(first_encounter_id)), 1), 1)
+
+        later_encounter_id = 9_003
+        self._remember_spawn(later_encounter_id)
+        response = self._catch_with_zero_chance(later_encounter_id)
+
+        self.assertEqual(pb.get(pb.decode(response), 1), 2)
