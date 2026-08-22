@@ -677,6 +677,20 @@ def acting_as(username):
         _current.player = prev
 
 
+def onboarding_needed(username: str) -> bool:
+    """A player needs native onboarding until it has a team or full profile."""
+    name = username or ""
+    if not name:
+        return True
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return player.TEAM == 0 and (not player.CODENAME or not player.CAUGHT)
+    player = Player(name)
+    if not player.load_from(player.file):
+        return True
+    return player.TEAM == 0 and (not player.CODENAME or not player.CAUGHT)
+
 def check_login(username, password):
     """(ok, reason, name). The FIRST login for a name claims it and sets the password."""
     name = (username or "").strip()

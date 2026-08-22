@@ -141,8 +141,8 @@ PD_CURRENCIES = 14
 GP_SUCCESS = 1
 GP_PLAYER_DATA = 2
 
-# New accounts enter onboarding until they pick a team. The persisted team is
-# the only source of truth; no environment flags are needed to bootstrap them.
+# New accounts enter onboarding until they have both a codename and starter.
+# Team selection may happen later at a gym, so TEAM=0 alone is not sufficient.
 TUTORIAL_COMPLETE = [0, 1, 2, 3, 4, 5, 6, 7]
 
 
@@ -151,7 +151,7 @@ def tutorial_state():
 
 
 def avatar_onboarding_capture(username: str) -> bool:
-    return _world.team_for(username) == 0
+    return _world.onboarding_needed(username)
 
 
 

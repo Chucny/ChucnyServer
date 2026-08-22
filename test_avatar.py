@@ -92,12 +92,13 @@ class AvatarTutorialTest(unittest.TestCase):
         fields = pb.decode(P.build_player_data("avatar-test"))
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]), [0, 1, 2, 3, 4, 5, 6, 7])
 
-    def test_team_selection_ends_automatic_onboarding(self):
+    def test_named_player_with_starter_ends_automatic_onboarding(self):
         player = world.use("AvatarCapture")
-        player.TEAM = 2
+        player.CODENAME = "AvatarCapture"
+        player.CAUGHT = [{"uid": 1, "pokemon_id": 4, "cp": 10}]
         fields = pb.decode(P.build_player_data("AvatarCapture"))
 
-        self.assertEqual(pb.get(fields, P.PD_TEAM), 2)
+        self.assertIsNotNone(pb.get(fields, P.PD_TEAM))
         self.assertEqual(list(pb.get_all(fields, P.PD_TUTORIAL)[0]),
                          [0, 1, 2, 3, 4, 5, 6, 7])
 
