@@ -255,6 +255,15 @@ def build_set_avatar_response() -> bytes:
     return pb.Writer().uint(1, 1).to_bytes()
 
 
+def build_check_awarded_badges_response() -> bytes:
+    """CheckAwardedBadgesResponse { success=1, awarded_badge=2 repeated }."""
+    import world
+    w = pb.Writer().bool_(1, True)
+    for badge_id in world.drain_badge_pending():
+        w.uint(2, badge_id)
+    return w.to_bytes()
+
+
 # ------------------------------------------------------------- GET_INVENTORY
 # (VERIFIED field numbers, POGOProtos 2016 layout:
 #  GetInventoryResponse{success=1, inventory_delta=2}

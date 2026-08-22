@@ -200,11 +200,11 @@ def _load_badge_counters(raw):
     counters = {}
     for key, value in raw.items():
         try:
-            value = int(value)
+            value = float(value)
         except (TypeError, ValueError):
             continue
-        if isinstance(key, str) and value >= 0:
-            counters[key] = value
+        if isinstance(key, str) and math.isfinite(value) and value >= 0:
+            counters[key] = int(value) if value.is_integer() else value
     return counters
 
 
@@ -522,16 +522,16 @@ def record_badge_progress(key, amount):
     """Add progress for one fixture-defined badge and queue newly reached ranks."""
     definition = BADGE_DEFINITIONS.get(key)
     try:
-        amount = int(amount)
+        amount = float(amount)
     except (TypeError, ValueError):
         return 0
-    if definition is None or amount <= 0:
+    if definition is None or not math.isfinite(amount) or amount <= 0:
         return current().BADGE_LEVELS.get(key, 0)
 
     p = current()
     with _lock:
         progress = p.BADGE_PROGRESS.get(key, 0) + amount
-        p.BADGE_PROGRESS[key] = progress
+        p.BADGE_PROGRESS[key] = int(progress) if progress.is_integer() else progress
         level = min(
             definition["max_rank"],
             sum(progress >= threshold for threshold in definition["thresholds"]),
@@ -542,6 +542,16 @@ def record_badge_progress(key, amount):
             p.BADGE_PENDING.extend([definition["type"]] * (level - previous))
     p.save()
     return level
+
+
+def drain_badge_pending():
+    """Return and persistently clear the badges awaiting client acknowledgement."""
+    p = current()
+    with _lock:
+        pending = list(p.BADGE_PENDING)
+        p.BADGE_PENDING.clear()
+    p.save()
+    return pending
 
 
 def accounts():
@@ -790,6 +800,8 @@ def bump(counter, n=1):
         if counter in p.STATS:
             p.STATS[counter] += n
     p.save()
+    if counter == "poke_stop_visits":
+        record_badge_progress("BADGE_POKESTOPS_VISITED", n)
 
 
 def level_claimed(level):
@@ -826,6 +838,7 @@ def add_caught(uid, pokemon_id, cp):
         p.STATS["unique_pokedex_entries"] = len({c["pokemon_id"] for c in p.CAUGHT})
         n = len(p.CAUGHT)
     p.save()
+    record_badge_progress("BADGE_CAPTURE_TOTAL", 1)
     return n
 
 
@@ -849,6 +862,8 @@ def add_tutorial_starter(pokemon_id, cp=10):
         entry[1] += 1
         entry[0] = max(entry[0], entry[1])
     p.save()
+    record_badge_progress("BADGE_CAPTURE_TOTAL", 1)
+    record_badge_progress("BADGE_POKEDEX_ENTRIES", 1)
     return dict(starter)
 
 
@@ -974,10 +989,13 @@ def pokedex_caught(pokemon_id):
     p = current()
     with _lock:
         e = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
+        new_entry = e[1] == 0
         e[1] += 1
         if e[0] < e[1]:
             e[0] = e[1]          # caught implies seen
     p.save()
+    if new_entry:
+        record_badge_progress("BADGE_POKEDEX_ENTRIES", 1)
 
 
 def pokedex():
@@ -1009,6 +1027,7 @@ def add_distance(lat, lng):
         return 0.0
     with _lock:
         p.STATS["km_walked"] = km_walked() + metres / 1000.0
+    record_badge_progress("BADGE_TRAVEL_KM", metres / 1000.0)
     return metres
 
 

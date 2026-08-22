@@ -370,6 +370,9 @@ def _build_returns(reqs, username, log):
             returns.append(P.build_level_up_rewards_response(lvl))
             log(f"      -> LEVEL_UP_REWARDS level {lvl}: "
                 + ("AWARDED_ALREADY (no popup)" if already else "SUCCESS, items granted"))
+        elif rtype == P.RT.CHECK_AWARDED_BADGES:
+            returns.append(P.build_check_awarded_badges_response())
+            log("      -> CHECK_AWARDED_BADGES acknowledged pending badges")
         elif rtype == P.RT.FORT_SEARCH:
             fid, _, _ = P.parse_fort_request(msg)
             returns.append(P.build_fort_search_response(fid, int(time.time() * 1000)))

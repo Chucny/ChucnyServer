@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pb
 import protocol
+import rpc
 import world
 
 class BadgeTemplateExtractionTest(unittest.TestCase):
@@ -96,3 +97,49 @@ class BadgeProgressTest(unittest.TestCase):
         self.assertEqual(player.BADGE_PROGRESS, {"other": 2})
         self.assertEqual(player.BADGE_LEVELS, {"other": 2})
         self.assertEqual(player.BADGE_PENDING, [3, 4])
+
+
+class BadgeEventAndResponseTest(BadgeProgressTest):
+    def test_capture_and_new_pokedex_entries_record_fixture_badges(self):
+        player = world.use("badges")
+
+        for index in range(30):
+            world.add_caught(index + 1, index % 5 + 1, 10)
+            world.pokedex_caught(index % 5 + 1)
+
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_CAPTURE_TOTAL"], 30)
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_POKEDEX_ENTRIES"], 5)
+        self.assertCountEqual(player.BADGE_PENDING, [3, 2])
+
+    def test_pokestop_visits_record_fixture_badge(self):
+        player = world.use("badges")
+
+        for _ in range(100):
+            world.bump("poke_stop_visits")
+
+        self.assertEqual(player.BADGE_PROGRESS["BADGE_POKESTOPS_VISITED"], 100)
+        self.assertEqual(player.BADGE_PENDING, [8])
+
+    def test_sub_kilometre_steps_accumulate_to_travel_badge(self):
+        player = world.use("badges")
+
+        for step in range(101):
+            world.add_distance(step * 100.1 / 111320.0, 0.0)
+
+        self.assertGreaterEqual(player.BADGE_PROGRESS["BADGE_TRAVEL_KM"], 10)
+        self.assertEqual(player.BADGE_PENDING, [1])
+
+    def test_check_awarded_badges_returns_and_drains_only_pending_ids(self):
+        player = world.use("badges")
+        player.BADGE_PENDING[:] = [3, 2]
+        player.save()
+
+        response = rpc._build_returns(
+            [(protocol.RT.CHECK_AWARDED_BADGES, b"")], "badges", lambda _: None)[0]
+
+        self.assertEqual(pb.get(pb.decode(response), 1, pb.WT_VARINT), 1)
+        self.assertEqual(pb.get_all(pb.decode(response), 2), [3, 2])
+        self.assertEqual(player.BADGE_PENDING, [])
+        empty = rpc._build_returns(
+            [(protocol.RT.CHECK_AWARDED_BADGES, b"")], "badges", lambda _: None)[0]
+        self.assertEqual(pb.get_all(pb.decode(empty), 2), [])
