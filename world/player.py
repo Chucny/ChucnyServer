@@ -655,12 +655,27 @@ def account_names():
     return sorted(names)
 
 
+def resolve_account(name):
+    """Map a typed name to the technical account key: exact username first,
+    then a case-insensitive codename match across saves."""
+    n = (name or "").strip()
+    if not n:
+        return None
+    if n in account_names():
+        return n
+    lower = n.lower()
+    for real in account_names():
+        if codename_for(real).lower() == lower:
+            return real
+    return None
+
+
 @contextlib.contextmanager
 def acting_as(username):
     """Run a block as another account, on THIS thread only."""
-    name = (username or "").strip()
-    if not name or name not in account_names():
-        raise KeyError(name)
+    name = resolve_account(username)
+    if not name:
+        raise KeyError((username or "").strip())
     prev = getattr(_current, "player", None)
     try:
         yield use(name)
@@ -705,9 +720,7 @@ def check_login(username, password):
 
 def set_password(username, password):
     """Used by the World Manager to reset a forgotten password."""
-    real = next(
-        (n for n in account_names() if n.lower() == (username or "").lower()), None
-    )
+    real = resolve_account(username)
     if not real:
         return False
     prev = getattr(_current, "player", None)
@@ -721,9 +734,7 @@ def set_password(username, password):
 
 
 def has_password(username):
-    real = next(
-        (n for n in account_names() if n.lower() == (username or "").lower()), None
-    )
+    real = resolve_account(username)
     if not real:
         return False
     prev = getattr(_current, "player", None)

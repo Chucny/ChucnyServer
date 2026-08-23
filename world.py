@@ -24,8 +24,8 @@ from world.player import (
     check_login, codename_for, current, drain_badge_pending, get_caught,
     has_password, level_bounds, level_for_xp, new_uid, onboarding_needed,
     record_badge_progress,
-    room_in_bag, save, set_password, spend, spend_coins, take_item, team_for,
-    type_badges_from_game_master, use,
+    room_in_bag, resolve_account, save, set_password, spend, spend_coins,
+    take_item, team_for, type_badges_from_game_master, use,
 )
 
 from world.spawns import (
@@ -500,7 +500,8 @@ class _WorldFacade(types.ModuleType):
         "set_password", "has_password", "add_item", "take_item", "bag_items",
         "bag_count", "bag_full", "room_in_bag", "add_coins", "spend_coins",
         "add_stardust", "candy", "add_candy", "spend", "avatar_for",
-        "codename_for", "team_for", "new_uid", "level_for_xp", "level_bounds",
+        "codename_for", "resolve_account", "team_for", "new_uid",
+        "level_for_xp", "level_bounds",
         "get_caught", "type_badges_from_game_master",
     }
     _player_dynamic = {

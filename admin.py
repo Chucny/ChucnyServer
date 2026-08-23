@@ -204,7 +204,9 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"places": PL.get(), "config": EV.get(),
                                "presets": list(EV.PRESETS),
                                "storage": world.storage(),
-                               "teleports": rpc.teleports(),
+                               "teleports": {
+                                   world.codename_for(k) or k: v
+                                   for k, v in rpc.teleports().items()},
                                "prices": {
                                    "pokemon_step": CFG.get("storage", "pokemon_upgrade_step"),
                                    "pokemon_cost": CFG.get("storage", "pokemon_upgrade_cost"),
@@ -243,7 +245,8 @@ class _Handler(BaseHTTPRequestHandler):
                 except (KeyError, TypeError, ValueError):
                     return self._json(
                         {"ok": False, "message": "latitude and longitude are required"}, 400)
-                if player not in world.account_names():
+                player = world.resolve_account(player)
+                if not player:
                     return self._json({"ok": False, "message": "unknown trainer"}, 400)
                 if not (math.isfinite(lat) and math.isfinite(lng)
                         and -90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
@@ -384,7 +387,8 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json(dict(cfg, message=msg))
             if p == "/api/accounts":
                 import world
-                return self._json({"accounts": world.account_names()})
+                return self._json({"accounts": [
+                    world.codename_for(n) or n for n in world.account_names()]})
             if p == "/api/buy":
                 import world
                 ok, message, new = world.buy_storage(
