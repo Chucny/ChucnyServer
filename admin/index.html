@@ -1,0 +1,176 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ChucnyServer World Manager</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/admin/styles.css"></head><body>
+
+<header>
+  <div>
+    <h1 class="brand-title">ChucnyServer</h1>
+    <div class="hint" style="margin:2px 0 0">World &amp; Event Management Portal</div>
+  </div>
+  <div style="text-align: right;">
+    <div class="status-badge"><span class="status-dot"></span> <span id="status">RUNNING</span></div>
+  </div>
+</header>
+
+<div class="container">
+
+  <div id="warn" class="alert-warning" style="display:none;">
+    <strong>No Gyms in your world.</strong> Random stops/gyms are OFF. Select <strong>Gym</strong> below and click on the map to add one.
+  </div>
+
+  <div class="card">
+    <div class="card-title">
+      <span>Interactive World Map</span>
+      <div class="stats-bar">
+        <span>Placed Objects: <strong id="cnt">0</strong></span>
+        <span>Details: <strong id="counts">0 stops</strong></span>
+      </div>
+    </div>
+
+    <div class="controls-row" style="margin-bottom: 14px;">
+      <button id="b-stop" class="on" onclick="setMode('stop')">PokeStop</button>
+      <button id="b-gym" onclick="setMode('gym')">Gym</button>
+      <button id="b-mon" onclick="setMode('mon')">Pokemon</button>
+      <button id="b-teleport" onclick="setMode('teleport')">Teleport Trainer</button>
+      <select id="species"></select>
+      <input id="pname" placeholder="Name (optional)" size="14">
+      <input id="pimg" placeholder="Photo path/URL" size="18">
+      <button onclick="togProc('forts')" id="b-pf">Random Stops: OFF</button>
+      <button onclick="togProc('spawns')" id="b-ps">Random Pokemon: ON</button>
+      <button class="btn-danger" onclick="clearAll()">Clear All</button>
+    </div>
+
+    <div id="map"></div>
+    <div class="hint">Click the map to place the selected element. In Teleport Trainer mode, select a trainer below first.</div>
+  </div>
+
+  <div class="grid-2">
+
+    <div class="card">
+      <div class="card-title">Quick Build Ring</div>
+      <div class="controls-row">
+        <input id="ring-n" type="number" value="8" min="1" max="24" style="width: 70px" title="Stops count">
+        <input id="ring-r" type="number" value="60" min="10" max="500" style="width: 80px" title="Radius meters">
+        <button class="btn-primary" onclick="ring()">Build Ring Around Trainer</button>
+      </div>
+      <div class="hint">Creates a neat circle of stops (and a gym) at your trainer's position.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Import High-Density POIs</div>
+      <div class="controls-row">
+        <input id="poi-lat" type="number" step="any" placeholder="Lat (e.g. 44.556)" style="width: 100px">
+        <input id="poi-lng" type="number" step="any" placeholder="Lng (e.g. -49.007)" style="width: 100px">
+        <input id="poi-r" type="number" value="3" min="0.1" max="50" step="0.1" style="width: 60px" title="Radius km">
+        <span style="font-size:13px; color:var(--text-muted)">km</span>
+        <input id="poi-limit" type="number" value="5000" min="100" max="10000" style="width: 75px" title="Max POIs Limit">
+        <span style="font-size:13px; color:var(--text-muted)">Limit</span>
+        <input id="poi-gym-chance" type="number" value="15" min="0" max="100" style="width: 60px" title="Gym Chance (%)">
+        <span style="font-size:13px; color:var(--text-muted)">% Gyms</span>
+        <button class="btn-primary" onclick="importPois()">Import</button>
+      </div>
+      <div class="hint" id="poihint">Imports nodes, ways, and relations from OSM including parks, art, and transit stops.</div>
+    </div>
+
+  </div>
+
+  <div class="grid-2">
+
+    <div class="card">
+      <div class="card-title">Raid Boss Management</div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <button onclick="raidToggle()" id="b-raid">Raid: OFF</button>
+        <select id="raid-mon"></select>
+        <input id="raid-cp" type="number" value="3000" min="10" max="9999" style="width: 80px" placeholder="CP">
+        <input id="raid-name" value="raid" size="8" title="Trainer name">
+        <button class="btn-primary" onclick="raidSave()">Apply</button>
+      </div>
+      <div class="hint" id="raidhint">Spawns a raid boss defending every gym across the server.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Shop &amp; Storage Upgrades</div>
+      <div class="controls-row" style="margin-bottom: 12px;">
+        <span>PokeCoins: <strong id="coins" style="color:var(--warning)">0</strong></span>
+        <button onclick="buy('pokemon')" id="b-buypk">Pokemon Storage</button>
+        <button onclick="buy('items')" id="b-buyit">Item Bag</button>
+      </div>
+      <div class="controls-row" id="shopitems" style="margin-bottom: 8px;"></div>
+      <div class="hint" id="shophint">Buy items using PokeCoins earned by defending Gyms.</div>
+      <div class="hint" id="buyhint"></div>
+    </div>
+
+  </div>
+
+  <div class="grid-2">
+
+    <div class="card">
+      <div class="card-title">Player Rewards &amp; Password Reset</div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <input id="giveuser" list="accounts" placeholder="Trainer Username (Blank = Active)" style="flex:1;">
+        <datalist id="accounts"></datalist>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <select id="giveitem" style="flex:1;"></select>
+        <input id="giveqty" type="number" value="20" min="1" max="999" style="width: 70px;">
+        <button class="btn-primary" onclick="give()">Give Items</button>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <select id="givecandy" style="flex:1;"></select>
+        <input id="givecandyqty" type="number" value="25" min="1" max="999" style="width: 70px;">
+        <button class="btn-primary" onclick="giveCandy()">Give Candy</button>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <input id="givedust" type="number" value="1000" min="1" max="999999" style="width: 80px;" title="Stardust">
+        <button class="btn-primary" onclick="giveDust()">Give Stardust</button>
+        <input id="givecoins" type="number" value="100" min="1" max="999999" style="width: 80px;" title="PokeCoins">
+        <button class="btn-primary" onclick="giveCoins()">Give Coins</button>
+      </div>
+      <div class="controls-row" style="margin-bottom: 8px;">
+        <input id="newpw" placeholder="New Password" style="width: 130px;">
+        <button onclick="resetPw()">Reset PW</button>
+      </div>
+      <div class="hint" id="givehint"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Event &amp; Global Spawn Controls</div>
+      <div class="controls-row" id="presets" style="margin-bottom: 12px;"></div>
+      <div class="controls-row">
+        <input id="ev-name" placeholder="Event Name" size="12">
+        <label style="font-size:13px; color:var(--text-muted)">Density: <input id="ev-density" type="number" min="0" max="60" style="width: 60px"></label>
+        <select id="ev-mode">
+          <option value="all">All 151</option>
+          <option value="list">From List</option>
+          <option value="single">Single Species</option>
+        </select>
+        <input id="ev-list" placeholder="1,4,7,25" size="10">
+        <label style="font-size:13px; color:var(--text-muted)">CP Range: 
+          <input id="ev-min" type="number" min="10" max="5000" style="width: 70px"> - 
+          <input id="ev-max" type="number" min="10" max="5000" style="width: 70px">
+        </label>
+        <button class="btn-primary" onclick="saveEv()">Apply Event Config</button>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">Player Nominations</div>
+      <div class="list" id="noms"><div class="empty">No nominations waiting.</div></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Placed Objects List</div>
+      <div class="list" id="list"></div>
+    </div>
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="/admin/app.js"></script></body></html>
