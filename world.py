@@ -215,6 +215,11 @@ class Player:
             "hatched": self.HATCHED,
             "max_pokemon": self.MAX_POKEMON,
             "max_items": self.MAX_ITEMS,
+            "pokestop_cooldowns": {
+                str(fid): int(ts)
+                for fid, ts in getattr(self, "POKESTOP_COOLDOWNS", {}).items()
+                if int(ts) > int(time.time() * 1000)
+            },
         }
 
     def save(self):
@@ -225,7 +230,7 @@ class Player:
                 json.dump(self.snapshot(), fh, indent=1)
             os.replace(tmp, self.file)     # atomic; never a half-written save
         except OSError:
-            pass                           # a failed save must never break play
+            pass                         # a failed save must never break play
 
     def load_from(self, path):
         try:
@@ -278,6 +283,16 @@ class Player:
             if pid and pid not in self.POKEDEX:
                 self.POKEDEX[pid] = [1, 1]
 
+        now_ms = int(time.time() * 1000)
+        self.POKESTOP_COOLDOWNS = {}
+        for fid, ts in (d.get("pokestop_cooldowns") or {}).items():
+            try:
+                ts = int(ts)
+                if ts > now_ms:
+                    self.POKESTOP_COOLDOWNS[str(fid)] = ts
+            except (TypeError, ValueError):
+                pass
+
         self.TEAM = int(d.get("team", 0) or 0)
         self.PW = str(d.get("pw", "") or "")
         self.APPLIED = [a for a in (d.get("applied") or []) if isinstance(a, dict)]
@@ -291,7 +306,7 @@ class Player:
         self.COINS = int(d.get("coins", 0) or 0)
         self.MAX_POKEMON = int(d.get("max_pokemon", 250) or 250)
         self.MAX_ITEMS = int(d.get("max_items", 350) or 350)
-
+    
         for k, v in (d.get("stats") or {}).items():
             if k in self.STATS:
                 self.STATS[k] = v
@@ -305,7 +320,6 @@ class Player:
         if not self.CLAIMED_LEVELS:
             self.CLAIMED_LEVELS = list(range(1, self.LEVEL + 1))
         return True
-
 
 # ==============================================================================
 # Player Session & Account Context Management
