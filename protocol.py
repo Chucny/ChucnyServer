@@ -135,8 +135,7 @@ def avatar_onboarding_capture(username: str) -> bool:
 
 
 # TeamColor: 0=NEUTRAL, 1=BLUE(Mystic), 2=RED(Valor), 3=YELLOW(Instinct).
-# Must be non-zero or the client refuses Gym interaction ("join a team first").
-def _team():
+def default_gym_team():
     return _cfg.get("gyms", "team", env="TEAM", cast=int)
 
 
@@ -1231,7 +1230,7 @@ def build_fort(fort_id, lat, lng, now_ms, is_gym=False) -> bytes:
         guard = world.gym_guard(fort_id)
         if guard:
             pid, cp, points = guard
-            w.uint(5, world.gym_team(fort_id) or _team()).uint(6, pid).int_(7, cp)
+            w.uint(5, world.gym_team(fort_id) or default_gym_team()).uint(6, pid).int_(7, cp)
         else:
             points = 0
             w.uint(5, 0)
