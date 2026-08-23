@@ -1,9 +1,11 @@
 """Inventory protocol builders and parsers."""
 import math as _math
 import random as _random
+import struct as _struct
 import time
 
 import pb
+import settings as _cfg
 import world
 from protocol.player import build_pokemon_data, current_hp, max_hp
 
@@ -11,6 +13,10 @@ try:
     import gamedata as _gd
 except ImportError:  # pragma: no cover
     _gd = None
+
+
+def _f64_to_double(v):
+    return _struct.unpack("<d", _struct.pack("<Q", v))[0] if v is not None else 0.0
 
 # ------------------------------------------------------------- GET_INVENTORY
 # (VERIFIED field numbers, POGOProtos 2016 layout:
@@ -363,6 +369,7 @@ def build_add_fort_modifier_response(item_id, fort_id, now_ms,
                                          world.current().username)
     w = pb.Writer().uint(1, code)
     if code == 1:
+        from protocol.map import build_fort_details_response
         w.message(2, build_fort_details_response(fort_id, lat, lng))
     return w.to_bytes()
 
