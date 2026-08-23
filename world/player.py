@@ -548,6 +548,13 @@ def current():
         p = use("player")
     return p
 
+def get_caught(uid):
+    with _lock:
+        for c in current().CAUGHT:
+            if c["uid"] == uid:
+                return dict(c)
+    return None
+
 
 def save():
     current().save()
