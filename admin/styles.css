@@ -241,7 +241,28 @@ input::placeholder { color: #71858e; }
 
 .row .t { color: var(--text); font-weight: 500; }
 .row .x { color: #fda4af; cursor: pointer; font-weight: 700; padding: 2px 6px; }
-.row .x:hover { color: #fff1f2; text-decoration: underline; }
+.loot-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 90px 64px 64px 76px;
+  gap: 8px;
+  align-items: center;
+  background: #152128;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 11px;
+}
+
+.loot-row select, .loot-row input { min-height: 32px; width: 100%; }
+
+.loot-row .x {
+  color: #fda4af;
+  cursor: pointer;
+  font-weight: 700;
+  padding: 2px 6px;
+  min-height: 32px;
+}
+
+.loot-row .x:hover { color: #fff1f2; text-decoration: underline; }
 
 .tag {
   border-radius: 4px;
@@ -347,4 +368,7 @@ input::placeholder { color: #71858e; }
   .card-title { align-items: flex-start; gap: 8px; flex-direction: column; }
   .status-metrics { grid-template-columns: 1fr; }
   #clear-all { margin-left: 0; }
+  .loot-row { grid-template-columns: 1fr 1fr; }
+  .loot-row .loot-item { grid-column: 1 / -1; }
+  .loot-row .x { grid-column: 1 / -1; }
 }

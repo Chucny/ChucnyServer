@@ -203,6 +203,73 @@
     Admin.load();
   }
 
+  function lootRow(entry) {
+    const row = document.createElement('div');
+    row.className = 'loot-row';
+    const item = document.createElement('select');
+    item.className = 'loot-item';
+    Admin.GIVEABLE.forEach(([id, label]) => {
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = label;
+      item.appendChild(option);
+    });
+    item.value = String(entry.item);
+    const chance = document.createElement('input');
+    chance.className = 'loot-chance';
+    chance.type = 'number';
+    chance.min = '0';
+    chance.max = '1';
+    chance.step = '0.01';
+    chance.value = entry.chance;
+    const lo = document.createElement('input');
+    lo.className = 'loot-min';
+    lo.type = 'number';
+    lo.min = '1';
+    lo.value = entry.min;
+    const hi = document.createElement('input');
+    hi.className = 'loot-max';
+    hi.type = 'number';
+    hi.min = '1';
+    hi.value = entry.max;
+    const remove = document.createElement('button');
+    remove.className = 'x';
+    remove.textContent = 'Remove';
+    remove.title = 'Remove this loot row';
+    remove.addEventListener('click', () => row.remove());
+    row.append(item, chance, lo, hi, remove);
+    return row;
+  }
+
+  function renderLoot(loot) {
+    const box = $('lootrows');
+    if (box.dataset.rendered === JSON.stringify(loot)) return;
+    box.replaceChildren();
+    loot.forEach(entry => box.appendChild(lootRow(entry)));
+    box.dataset.rendered = JSON.stringify(loot);
+  }
+
+  async function saveLoot() {
+    const loot = [...$('lootrows').querySelectorAll('.loot-row')].map(row => ({
+      item: +row.querySelector('.loot-item').value,
+      chance: parseFloat(row.querySelector('.loot-chance').value),
+      min: +row.querySelector('.loot-min').value,
+      max: +row.querySelector('.loot-max').value
+    }));
+    Admin.feedback('worldhint', 'loading', 'Saving PokéStop loot table…');
+    try {
+      const result = await Admin.post('/api/pokestop-loot', {loot});
+      if (!result.ok) {
+        Admin.feedback('worldhint', 'error', result.message || 'Invalid loot table');
+        return;
+      }
+      Admin.feedback('worldhint', 'success', 'PokéStop loot table saved');
+      Admin.load();
+    } catch {
+      Admin.feedback('worldhint', 'error', 'Could not save loot table');
+    }
+  }
+
   function render(world) {
     const data = world.places;
     const gyms = data.forts.filter(fort => fort.kind === 'gym').length;
@@ -243,6 +310,7 @@
       playerMarker = L.circleMarker([player.lat, player.lng], {radius: 7, color: '#2563eb', fillColor: '#3b82f6', fillOpacity: 1})
         .addTo(map).bindTooltip('Trainer Position');
     }
+    renderLoot(world.loot);
     draw();
   }
 
@@ -254,6 +322,8 @@
     $('build-ring').addEventListener('click', ring);
     $('import-pois').addEventListener('click', importPois);
     $('save-event').addEventListener('click', saveEvent);
+    $('loot-add').addEventListener('click', () => $('lootrows').appendChild(lootRow({item: 1, chance: 1, min: 1, max: 1})));
+    $('loot-save').addEventListener('click', saveLoot);
     setMode(mode);
   }
 
