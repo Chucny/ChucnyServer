@@ -316,3 +316,36 @@ def roll_pokestop_loot(rng):
         if rng.random() < e["chance"]:
             awards.append((e["item"], rng.randint(e["min"], e["max"])))
     return awards
+
+
+def save_pokestop_loot(table):
+    """Atomically persist a validated pokestops.loot table into settings.json.
+
+    Returns the sanitized table on success, or None when `table` is invalid --
+    in which case settings.json is left untouched, so a failed save can never
+    clobber the current table. The write is atomic (temp file + rename), so a
+    crash mid-save cannot corrupt the file either.
+    """
+    sanitized = validated_pokestop_loot(table)
+    if sanitized != table:
+        return None
+    with _lock:
+        try:
+            with open(SETTINGS_FILE, "r", encoding="utf-8") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError):
+            doc = {"_readme": list(_README)}
+            doc.update({k: dict(v) for k, v in DEFAULTS.items()})
+        if not isinstance(doc, dict):
+            doc = {}
+        pokestops = doc.get("pokestops")
+        if not isinstance(pokestops, dict):
+            pokestops = dict(DEFAULTS["pokestops"])
+            doc["pokestops"] = pokestops
+        pokestops["loot"] = sanitized
+        tmp = SETTINGS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(doc, fh, indent=2)
+        os.replace(tmp, SETTINGS_FILE)
+        _cache.update(data=None, mtime=None, checked=0.0)
+    return sanitized

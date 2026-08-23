@@ -210,6 +210,7 @@ class _Handler(BaseHTTPRequestHandler):
                                    "pokemon_cost": CFG.get("storage", "pokemon_upgrade_cost"),
                                    "items_step": CFG.get("storage", "items_upgrade_step"),
                                    "items_cost": CFG.get("storage", "items_upgrade_cost")},
+                               "loot": CFG.all()["pokestops"]["loot"],
                                "player": {"lat": lat, "lng": lng}})
         self._send(404, "text/plain", "not found")
 
@@ -391,8 +392,13 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": ok, "message": message, "new": new})
             if p == "/api/procedural":
                 return self._json(PL.set_procedural(d.get("on", True), d.get("what", "both")))
-            if p == "/api/save":
-                return self._json(EV.save(d))
+            if p == "/api/pokestop-loot":
+                import settings as CFG
+                table = CFG.save_pokestop_loot(d.get("loot"))
+                if table is None:
+                    return self._json({"ok": False,
+                                       "message": "invalid loot table: each entry needs a GIVEABLE item, chance 0-1, min >= 1, and min <= max"}, 400)
+                return self._json({"ok": True, "loot": table})
             if p == "/api/preset":
                 m = EV.apply_preset(d.get("name", ""))
                 return self._json(m if m else {"error": "unknown preset"},

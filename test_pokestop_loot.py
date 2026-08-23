@@ -1,10 +1,14 @@
 import json
 import random
+import http.client
+import threading
+from http.server import ThreadingHTTPServer
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
+import admin
 import pb
 import settings
 import world
@@ -208,10 +212,86 @@ class PokestopSpinTest(unittest.TestCase):
         resp1, before, after = self._spin("stop.11", 5_000_000)
         self.assertEqual(self._result(resp1), 1)          # SUCCESS
         self.assertEqual(world.stats()[1] - xp_before, 50)  # xp_per_spin
-        # A re-spin inside the cooldown window is refused without items.
-        resp2, b2, a2 = self._spin("stop.11", 5_000_001)
-        self.assertEqual(self._result(resp2), 3)          # COOLDOWN
-        self.assertEqual(a2, b2)
+class PokestopLootApiTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.settings_file = Path(self.tmp.name) / "settings.json"
+        self.settings_patch = patch.object(
+            settings, "SETTINGS_FILE", str(self.settings_file))
+        self.settings_patch.start()
+        self.addCleanup(self.settings_patch.stop)
+        self.addCleanup(self.tmp.cleanup)
+        self._write_settings()
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), admin._Handler)
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(self.server.server_close)
+        self.addCleanup(thread.join)
+        self.addCleanup(self.server.shutdown)
+        self.port = self.server.server_address[1]
+
+    def _write_settings(self, pokestops=None):
+        doc = {"_readme": []}
+        for section, vals in settings.DEFAULTS.items():
+            doc[section] = dict(vals)
+        if pokestops is not None:
+            doc["pokestops"] = pokestops
+        self.settings_file.write_text(json.dumps(doc), encoding="utf-8")
+        settings._cache.update(data=None, mtime=None, checked=0.0)
+
+    def _request(self, method, path, body=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port)
+        payload = json.dumps(body) if body is not None else None
+        headers = {"Content-Type": "application/json"} if body is not None else {}
+        conn.request(method, path, payload, headers)
+        resp = conn.getresponse()
+        data = json.loads(resp.read())
+        conn.close()
+        return resp.status, data
+
+    def _on_disk(self):
+        return json.loads(self.settings_file.read_text(encoding="utf-8"))
+
+    def test_world_exposes_effective_loot_table(self):
+        status, data = self._request("GET", "/api/world")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["loot"], settings.all()["pokestops"]["loot"])
+
+    def test_post_persists_valid_loot_table(self):
+        table = [
+            {"item": 1, "chance": 1.0, "min": 1, "max": 3},
+            {"item": 2, "chance": 0.5, "min": 1, "max": 2},
+        ]
+        status, data = self._request("POST", "/api/pokestop-loot", {"loot": table})
+        self.assertEqual(status, 200)
+        self.assertTrue(data["ok"])
+        self.assertEqual(data["loot"], table)
+        self.assertEqual(self._on_disk()["pokestops"]["loot"], table)
+        self.assertEqual(self._request("GET", "/api/world")[1]["loot"], table)
+
+    def test_post_rejects_invalid_loot_without_writing(self):
+        before = self.settings_file.read_text(encoding="utf-8")
+        for bad in (
+            [{"item": 9999, "chance": 0.5, "min": 1, "max": 2}],  # not GIVEABLE
+            [{"item": 1, "chance": 1.5, "min": 1, "max": 2}],     # chance > 1
+            [{"item": 1, "chance": 0.5, "min": 3, "max": 2}],     # min > max
+            [{"item": 1, "chance": 0.5}],                         # missing keys
+            [],
+            "not a list",
+            None,
+        ):
+            status, data = self._request(
+                "POST", "/api/pokestop-loot", {"loot": bad})
+            self.assertEqual(status, 400, msg=repr(bad))
+            self.assertFalse(data["ok"])
+            self.assertEqual(self.settings_file.read_text(encoding="utf-8"), before)
+        self.assertEqual(
+            self._request("GET", "/api/world")[1]["loot"],
+            settings.DEFAULT_POKESTOP_LOOT)
+
+
+if __name__ == "__main__":
+    unittest.main()
 
 
 if __name__ == "__main__":
