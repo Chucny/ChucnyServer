@@ -507,6 +507,7 @@ def build_level_up_rewards_response(level) -> bytes:
     awards = [(ITEM_POKE_BALL, 10), (ITEM_POTION, 5)]
     w = pb.Writer().uint(1, 1)
     for iid, cnt in awards:
+        from protocol.map import build_item_award
         w.message(2, build_item_award(iid, cnt))
         world.add_item(iid, cnt)
     world.claim_level(level)
