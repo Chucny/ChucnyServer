@@ -6,6 +6,12 @@
     GIVEABLE: __GIVEABLE__,
     SHOP: __SHOP__,
     state: {data: {forts: [], spawns: []}, player: {lat: 0, lng: 0}, world: null},
+    feedback(id, state, message) {
+      const element = $(id);
+      element.textContent = message;
+      element.classList.add('feedback');
+      element.dataset.state = state;
+    },
     async post(url, body) {
       return (await fetch(url, {
         method: 'POST',

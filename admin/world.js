@@ -162,17 +162,21 @@
     if (mode === 'teleport') {
       const player = $('giveuser').value.trim();
       if (!player) {
-        alert('Select a trainer before teleporting.');
+        Admin.feedback('givehint', 'error', 'Select a trainer before teleporting');
         return;
       }
-      const result = await Admin.post('/api/teleport', {player, lat, lng});
-      if (!result.ok) {
-        alert(result.message);
-        return;
+      Admin.feedback('givehint', 'loading', 'Teleporting trainer…');
+      try {
+        const result = await Admin.post('/api/teleport', {player, lat, lng});
+        if (!result.ok) {
+          Admin.feedback('givehint', 'error', result.message);
+          return;
+        }
+        Admin.feedback('givehint', 'success', `Teleported ${result.player} to ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        Admin.load();
+      } catch {
+        Admin.feedback('givehint', 'error', 'Could not teleport trainer');
       }
-      $('givehint').textContent = `Teleported ${result.player} to ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-      $('givehint').style.color = 'var(--success)';
-      Admin.load();
       return;
     }
     const name = $('pname').value;

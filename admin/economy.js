@@ -3,8 +3,7 @@
   const $ = Admin.$;
 
   function showGiveResult(result) {
-    $('givehint').textContent = (result.ok ? '✓ ' : '✗ ') + result.message;
-    $('givehint').style.color = result.ok ? 'var(--success)' : 'var(--danger)';
+    Admin.feedback('givehint', result.ok ? 'success' : 'error', result.message);
     Admin.load();
   }
 
@@ -22,10 +21,14 @@
   }
 
   async function buyItem(sku) {
-    const result = await Admin.post('/api/buyitem', {sku, player: $('giveuser').value});
-    $('buyhint').textContent = (result.ok ? '✓ ' : '✗ ') + result.message;
-    $('buyhint').style.color = result.ok ? 'var(--success)' : 'var(--danger)';
-    Admin.load();
+    Admin.feedback('buyhint', 'loading', 'Purchasing item…');
+    try {
+      const result = await Admin.post('/api/buyitem', {sku, player: $('giveuser').value});
+      Admin.feedback('buyhint', result.ok ? 'success' : 'error', result.message);
+      Admin.load();
+    } catch {
+      Admin.feedback('buyhint', 'error', 'Could not purchase item');
+    }
   }
 
   function paintRaid(raid) {
@@ -37,30 +40,45 @@
   }
 
   async function toggleRaid() {
-    const result = await Admin.post('/api/raid', {
-      on: !$('b-raid').textContent.includes('ON'),
-      pokemon_id: +$('raid-mon').value,
-      cp: +$('raid-cp').value,
-      trainer: $('raid-name').value
-    });
-    paintRaid(result);
-    $('raidhint').textContent = result.message;
-    Admin.load();
+    Admin.feedback('raidhint', 'loading', 'Updating raid…');
+    try {
+      const result = await Admin.post('/api/raid', {
+        on: !$('b-raid').textContent.includes('ON'),
+        pokemon_id: +$('raid-mon').value,
+        cp: +$('raid-cp').value,
+        trainer: $('raid-name').value
+      });
+      paintRaid(result);
+      Admin.feedback('raidhint', result.ok === false ? 'error' : 'success', result.message);
+      Admin.load();
+    } catch {
+      Admin.feedback('raidhint', 'error', 'Could not update raid');
+    }
   }
 
   async function saveRaid() {
-    const result = await Admin.post('/api/raid', {
-      pokemon_id: +$('raid-mon').value,
-      cp: +$('raid-cp').value,
-      trainer: $('raid-name').value
-    });
-    paintRaid(result);
-    $('raidhint').textContent = result.message;
-    Admin.load();
+    Admin.feedback('raidhint', 'loading', 'Applying raid settings…');
+    try {
+      const result = await Admin.post('/api/raid', {
+        pokemon_id: +$('raid-mon').value,
+        cp: +$('raid-cp').value,
+        trainer: $('raid-name').value
+      });
+      paintRaid(result);
+      Admin.feedback('raidhint', result.ok === false ? 'error' : 'success', result.message);
+      Admin.load();
+    } catch {
+      Admin.feedback('raidhint', 'error', 'Could not apply raid settings');
+    }
   }
 
   async function give(kind, fields) {
-    showGiveResult(await Admin.post('/api/give', {player: $('giveuser').value, kind, ...fields}));
+    Admin.feedback('givehint', 'loading', 'Granting reward…');
+    try {
+      showGiveResult(await Admin.post('/api/give', {player: $('giveuser').value, kind, ...fields}));
+    } catch {
+      Admin.feedback('givehint', 'error', 'Could not grant reward');
+    }
   }
 
   async function resetPassword() {
@@ -74,10 +92,14 @@
   }
 
   async function buyStorage(what) {
-    const result = await Admin.post('/api/buy', {what});
-    $('shophint').textContent = (result.ok ? '✓ ' : '✗ ') + result.message;
-    $('shophint').style.color = result.ok ? 'var(--success)' : 'var(--danger)';
-    Admin.load();
+    Admin.feedback('shophint', 'loading', 'Purchasing upgrade…');
+    try {
+      const result = await Admin.post('/api/buy', {what});
+      Admin.feedback('shophint', result.ok ? 'success' : 'error', result.message);
+      Admin.load();
+    } catch {
+      Admin.feedback('shophint', 'error', 'Could not purchase upgrade');
+    }
   }
 
   function addOptions() {
