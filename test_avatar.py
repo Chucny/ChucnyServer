@@ -17,6 +17,18 @@ class PlayerModuleFacadeTest(unittest.TestCase):
         self.assertIs(world.Player, player.Player)
         self.assertIs(world.use, player.use)
         self.assertIs(world.current, player.current)
+    def test_facade_forwards_current_player_attributes(self):
+        state = world.Player("facade-read")
+
+        with patch.object(world, "current", return_value=state):
+            self.assertIs(world.BAG, state.BAG)
+            self.assertEqual(world.COINS, state.COINS)
+            self.assertEqual(world.STARDUST, state.STARDUST)
+            self.assertEqual(world.MAX_POKEMON, state.MAX_POKEMON)
+            self.assertEqual(world.LEVEL, state.LEVEL)
+            self.assertIs(world.STATS, state.STATS)
+
+
 
 
 class AvatarCaptureTest(unittest.TestCase):

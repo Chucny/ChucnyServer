@@ -726,6 +726,20 @@ def has_password(username):
         _current.player = prev
 
 
+_FORWARD = {
+    "BAG", "CAUGHT", "CANDY", "STARDUST", "XP", "LEVEL", "COINS", "DELETED",
+    "POKEDEX", "EGGS", "INCUBATORS", "HATCHED", "TEAM", "BERRIES", "APPLIED",
+    "MAX_POKEMON", "MAX_ITEMS", "CLAIMED_LEVELS", "STATS", "BADGE_PROGRESS",
+    "BADGE_LEVELS", "BADGE_PENDING"
+}
+
+
+def __getattr__(name):
+    if name in _FORWARD:
+        return getattr(current(), name)
+    raise AttributeError(name)
+
+
 def add_item(item_id, count):
     p = current()
     with _lock:
