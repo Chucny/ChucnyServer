@@ -10,14 +10,7 @@ import pb
 import s2sphere
 import settings as _cfg
 import world as _world
-from protocol.inventory import (
-    ITEM_GREAT_BALL,
-    ITEM_POKE_BALL,
-    ITEM_POTION,
-    ITEM_RAZZ_BERRY,
-    ITEM_REVIVE,
-    ITEM_ULTRA_BALL,
-)
+from protocol.inventory import ITEM_POKE_BALL
 from protocol.player import build_player_avatar, build_pokemon_data, default_gym_team
 
 # ------------------------------------------------------------- GET_MAP_OBJECTS
@@ -377,19 +370,18 @@ def build_fort_search_response(fort_id, now_ms) -> bytes:
     _lo = _cfg.get("pokestops", "min_items_per_spin", cast=int)
     _hi = max(_lo, _cfg.get("pokestops", "max_items_per_spin", cast=int))
 
-    awards = [
-        (ITEM_POTION, rnd.randint(1, 2)),
-        (ITEM_REVIVE, 1),
-    ]
-    if rnd.random() < _cfg.get("pokestops", "great_ball_chance", cast=float):
-        awards.append((ITEM_GREAT_BALL, rnd.randint(1, 2)))
-    if rnd.random() < _cfg.get("pokestops", "ultra_ball_chance", cast=float):
-        awards.append((ITEM_ULTRA_BALL, 1))
-    if rnd.random() < _cfg.get("pokestops", "razz_berry_chance", cast=float):
-        awards.append((ITEM_RAZZ_BERRY, rnd.randint(1, 2)))
+    awards = _cfg.roll_pokestop_loot(rnd)
 
-    other = sum(c for _i, c in awards)
-    awards.insert(0, (ITEM_POKE_BALL, max(rnd.randint(1, 3), _lo - other)))
+    # Floor: a spin never gives fewer than min_items_per_spin. Top the gap up
+    # with Poke Balls (the first entry in the default table).
+    total = sum(c for _i, c in awards)
+    if total < _lo:
+        for i, (iid, cnt) in enumerate(awards):
+            if iid == ITEM_POKE_BALL:
+                awards[i] = (iid, cnt + _lo - total)
+                break
+        else:
+            awards.insert(0, (ITEM_POKE_BALL, _lo - total))
 
     total = sum(c for _i, c in awards)
     for i in range(len(awards) - 1, -1, -1):

@@ -25,6 +25,18 @@ def _data_dir():
 
 SETTINGS_FILE = os.path.join(_data_dir(), "settings.json")
 
+# What a PokeStop spin drops. Each entry rolls independently with its own
+# chance; "min"/"max" bound the count when it does. Keep the ids within
+# admin.GIVEABLE -- validated_pokestop_loot enforces that.
+DEFAULT_POKESTOP_LOOT = [
+    {"item": 1,   "chance": 1.00, "min": 1, "max": 3},  # Poke Ball
+    {"item": 101, "chance": 1.00, "min": 1, "max": 2},  # Potion
+    {"item": 201, "chance": 1.00, "min": 1, "max": 1},  # Revive
+    {"item": 2,   "chance": 0.30, "min": 1, "max": 2},  # Great Ball
+    {"item": 3,   "chance": 0.10, "min": 1, "max": 1},  # Ultra Ball
+    {"item": 701, "chance": 0.35, "min": 1, "max": 2},  # Razz Berry
+]
+
 # Every tunable, with the shape the file is written in. Keep the comments here in
 # sync with the "_readme" block below -- that's what the user actually reads.
 DEFAULTS = {
@@ -48,9 +60,7 @@ DEFAULTS = {
         "cooldown_minutes": 5,
         "min_items_per_spin": 5,        # a spin never gives fewer items than this
         "max_items_per_spin": 8,
-        "great_ball_chance": 0.30,      # Great Balls turn up now and then
-        "ultra_ball_chance": 0.10,      # Ultra Balls are rarer
-        "razz_berry_chance": 0.35,
+        "loot": DEFAULT_POKESTOP_LOOT,  # what a spin drops (item/chance/min/max)
     },
     "gyms": {
         "chance_per_l15_cell": 0.25,   # ~1 gym per 4 level-15 cells
@@ -130,6 +140,10 @@ _README = [
     "   xp_per_spin .......... XP each time you spin a stop",
     "   cooldown_minutes ..... how long a stop stays purple before reuse",
     "   min/max_items_per_spin  how many items a spin gives",
+    "   loot ................. what a spin can drop: a list of",
+    "                          {item, chance, min, max} entries; item ids are",
+    "                          the Shop panel ones, chance is 0-1, and a spin",
+    "                          always gives between min/max_items_per_spin items",
     "",
     "gyms:",
     "   team ................. your team: 1=Blue, 2=Red, 3=Yellow",
@@ -197,6 +211,7 @@ def _merged(user):
         for k, v in vals.items():
             if not k.startswith("_") and k in out[section]:
                 out[section][k] = v
+    out["pokestops"]["loot"] = validated_pokestop_loot(out["pokestops"]["loot"])
     return out
 
 
@@ -262,3 +277,42 @@ def get(section, key, env=None, cast=None):
         except (TypeError, ValueError):
             return DEFAULTS[section][key]
     return val
+
+
+def validated_pokestop_loot(value):
+    """Sanitize a pokestops.loot table.
+
+    Each entry must be {"item": <id from admin.GIVEABLE>, "chance": 0..1,
+    "min": >= 1, "max": >= min}. Anything that does not parse -- a missing
+    entry, an unknown id, an out-of-range chance, min > max -- falls back to
+    the default table, so a bad hand-edit can never break spins.
+    """
+    if not isinstance(value, list) or not value:
+        return [dict(e) for e in DEFAULT_POKESTOP_LOOT]
+    from admin import GIVEABLE
+    valid_ids = {iid for iid, _ in GIVEABLE}
+    out = []
+    for e in value:
+        if not isinstance(e, dict):
+            return [dict(x) for x in DEFAULT_POKESTOP_LOOT]
+        try:
+            item, chance, lo, hi = int(e["item"]), float(e["chance"]), int(e["min"]), int(e["max"])
+        except (KeyError, TypeError, ValueError):
+            return [dict(x) for x in DEFAULT_POKESTOP_LOOT]
+        if item not in valid_ids or not 0.0 <= chance <= 1.0 or lo < 1 or hi < lo:
+            return [dict(x) for x in DEFAULT_POKESTOP_LOOT]
+        out.append({"item": item, "chance": chance, "min": lo, "max": hi})
+    return out
+
+
+def roll_pokestop_loot(rng):
+    """Roll the effective pokestops.loot table with `rng`.
+
+    Returns [(item_id, count)] in table order; chance 1.0 entries always drop
+    and chance 0.0 never do. Per-spin min/max and bag limits are the caller's.
+    """
+    awards = []
+    for e in all()["pokestops"]["loot"]:
+        if rng.random() < e["chance"]:
+            awards.append((e["item"], rng.randint(e["min"], e["max"])))
+    return awards
