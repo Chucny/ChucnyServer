@@ -240,3 +240,51 @@
  .stats-bar strong {
    color: var(--text);
  }
+
+.tabs {
+  max-width: 1240px;
+  margin: 22px auto 0;
+  padding: 0 24px;
+  display: flex;
+  gap: 8px;
+}
+
+.tabs button {
+  border-radius: 10px 10px 0 0;
+  background: #e2e8f0;
+  color: var(--text-muted);
+}
+
+.tabs button.active {
+  background: var(--primary);
+  color: #fff;
+  box-shadow: none;
+}
+
+.status-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.status-metrics div {
+  padding: 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.status-metrics strong,
+.status-metrics span {
+  display: block;
+}
+
+.status-metrics strong {
+  font-size: 22px;
+  color: var(--primary);
+}
+
+.status-metrics span,
+.input-unit {
+  font-size: 13px;
+  color: var(--text-muted);
+}

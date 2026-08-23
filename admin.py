@@ -179,6 +179,9 @@ class _Handler(BaseHTTPRequestHandler):
             "/": ("index.html", "text/html; charset=utf-8"),
             "/admin/styles.css": ("styles.css", "text/css; charset=utf-8"),
             "/admin/app.js": ("app.js", "application/javascript; charset=utf-8"),
+            "/admin/dashboard.js": ("dashboard.js", "application/javascript; charset=utf-8"),
+            "/admin/world.js": ("world.js", "application/javascript; charset=utf-8"),
+            "/admin/economy.js": ("economy.js", "application/javascript; charset=utf-8"),
         }
         if p in assets:
             name, ctype = assets[p]
