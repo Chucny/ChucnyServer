@@ -260,8 +260,9 @@ def build_gym_membership(m) -> bytes:
     the gym screen, so always include the owner."""
     import world
     lvl, _ = world.stats()
+    owner_name = m.get("trainer") or "Trainer"
     profile = (pb.Writer()
-               .string(1, m.get("trainer") or "Trainer")
+               .string(1, world.codename_for(owner_name) or owner_name)
                .int_(2, lvl)
                .message(3, build_player_avatar(world.avatar_for(m.get("owner")
                                                                 or m.get("trainer"))))

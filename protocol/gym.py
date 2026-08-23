@@ -116,8 +116,10 @@ def build_start_gym_battle_response(gym_id, attacker_uids, defender_uid, now_ms)
                           "raid": is_raid,
                           "start": now_ms, "player": world.current().username}
     lvl, _xp = world.stats()
-    me = _battle_participant(atk["pokemon_id"], atk["uid"], atk["cp"], ahp,
-                             world.current().username, lvl, world.current().AVATAR)
+    me = _battle_participant(
+        atk["pokemon_id"], atk["uid"], atk["cp"], ahp,
+        world.codename_for(world.current().username) or world.current().username,
+        lvl, world.current().AVATAR)
     # A raid boss is not a person -- report level -1 so nobody mistakes "raid"
     # for a real trainer who parked a Mewtwo in every gym.
     def_lvl = -1 if is_raid else lvl
