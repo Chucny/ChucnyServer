@@ -418,19 +418,6 @@ def build_set_player_team_response(team, username) -> bytes:
             .to_bytes())
 
 
-def catch_chance(pokemon_id, cp, ball_id, reticle, berry_mult):
-    """Probability this throw holds.
-
-    Everything used to be a guaranteed catch, which made a Pokeball a formality.
-    Stronger Pokemon resist, better balls and better throws help, and a Razz
-    Berry multiplies it."""
-    base = _cfg.get("catching", "base_catch_rate", cast=float)
-    # a 2000 CP Pokemon should be a real fight; a 100 CP one shouldn't
-    base *= max(0.18, 1.0 - (max(0, int(cp)) / 3200.0))
-    base *= {1: 1.0, 2: 1.5, 3: 2.0}.get(int(ball_id), 1.0)      # poke/great/ultra
-    base *= 1.0 + max(0.0, min(1.0, float(reticle))) * 0.55      # aim helps
-    base *= max(1.0, float(berry_mult))
-    return max(0.05, min(0.95, base))
 
 
 def parse_use_item(msg):
