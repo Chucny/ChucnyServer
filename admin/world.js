@@ -122,11 +122,11 @@
     const data = Admin.state.data;
     data.forts.forEach(fort => {
       L.marker([fort.lat, fort.lng], {icon: icon(fort.kind === 'gym' ? '#ef4444' : '#2563eb', fort.kind === 'gym' ? 'G' : 'S')})
-        .addTo(layer).bindTooltip(fort.name).on('click', () => remove(fort.id));
+        .addTo(layer).bindTooltip(fort.name).on('click', () => removeObject(fort.id));
     });
     data.spawns.forEach(spawn => {
       L.marker([spawn.lat, spawn.lng], {icon: icon(spawn.pokemon_id ? '#10b981' : '#8b5cf6', spawn.pokemon_id ? String(spawn.pokemon_id) : '?')})
-        .addTo(layer).bindTooltip(spawn.pokemon_id ? (Admin.DEX[spawn.pokemon_id] || ('#' + spawn.pokemon_id)) : 'Random').on('click', () => remove(spawn.id));
+        .addTo(layer).bindTooltip(spawn.pokemon_id ? (Admin.DEX[spawn.pokemon_id] || ('#' + spawn.pokemon_id)) : 'Random').on('click', () => removeObject(spawn.id));
     });
     const rows = [
       ...data.forts.map(fort => ({id: fort.id, cls: fort.kind === 'gym' ? 'gym' : 'stop', tag: fort.kind === 'gym' ? 'GYM' : 'STOP', text: `${fort.name}${fort.image ? ' [photo]' : ''} — ${fort.lat.toFixed(5)}, ${fort.lng.toFixed(5)}`})),
@@ -162,20 +162,20 @@
     if (mode === 'teleport') {
       const player = $('giveuser').value.trim();
       if (!player) {
-        Admin.feedback('givehint', 'error', 'Select a trainer before teleporting');
+        Admin.feedback('worldhint', 'error', 'Select a trainer before teleporting');
         return;
       }
-      Admin.feedback('givehint', 'loading', 'Teleporting trainer…');
+      Admin.feedback('worldhint', 'loading', 'Teleporting trainer…');
       try {
         const result = await Admin.post('/api/teleport', {player, lat, lng});
         if (!result.ok) {
-          Admin.feedback('givehint', 'error', result.message);
+          Admin.feedback('worldhint', 'error', result.message);
           return;
         }
-        Admin.feedback('givehint', 'success', `Teleported ${result.player} to ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
+        Admin.feedback('worldhint', 'success', `Teleported ${result.player} to ${lat.toFixed(5)}, ${lng.toFixed(5)}`);
         Admin.load();
       } catch {
-        Admin.feedback('givehint', 'error', 'Could not teleport trainer');
+        Admin.feedback('worldhint', 'error', 'Could not teleport trainer');
       }
       return;
     }
