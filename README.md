@@ -15,16 +15,21 @@
 6. Go to your Wi-Fi settings and change your **DNS** to the IP shown in the server output
 7. Open the **Pokemon GO app** and tap on **Pokemon Trainer Club**
 8. Enter any username and password
-9. You are now in!
+9. You are now in!<br>
+
+### **⌨️ How to use the terminal manager**<br>
+Remember: The terminal manager is still full of bugs and is in Beta.<br>
+1. Run **main.py**<br>
+2. Then, run **terminal.py** in another terminal window
 
 ### 📝 Features
-- **World Manager**: manage spawns and PokeStops
+- **World Manager**: manage spawns, PokeStops, gyms, events and more.
 - **Raids**: Defeat a powerful boss at a gym. Once defeated, it spawns next to the gym for you to catch
 - **Community day & events**: Play different community days
 - **Gym battles**: Battle pokemon in gyms!
 - **Automatic dependency downloader**: automatically download dependencies
-- **Pokestop nomination** (**broken**, made by Bracky): Nominate PokeStops via the in-game help center. It doesn't seem to work yet.
 - **Automatic PokeStop import**: import up to 10000 PokeStops at once via OSM API!
+- **Terminal Manager**: An alternative to the graphical World Manager served at localhost:8080. It's still in beta and has lots of bugs.
 
 
 ### 🗄️ How to get assets
