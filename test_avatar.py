@@ -233,12 +233,14 @@ class ClaimCodenameRpcTest(unittest.TestCase):
         self.assertEqual(pb.get(fields, 3, pb.WT_VARINT), 1)
         self.assertEqual(pb.get(fields, 4, pb.WT_VARINT), 1)
         self.assertIsNone(pb.get(fields, 5, pb.WT_LEN))
-        self.assertEqual(world.current().username, "AvatarCapture")
+        # The technical account key is the safe filename form; the codename is
+        # what the client displays.
+        self.assertEqual(world.current().username, "avatarcapture")
         self.assertEqual(world.current().CODENAME, "MrPurple")
 
         world._players.clear()
         reloaded = world.use("AvatarCapture")
-        self.assertEqual(reloaded.username, "AvatarCapture")
+        self.assertEqual(reloaded.username, "avatarcapture")
         self.assertEqual(reloaded.CODENAME, "MrPurple")
         player_data = pb.decode(P.build_player_data("AvatarCapture"))
         self.assertEqual(pb.get(player_data, P.PD_USERNAME, pb.WT_LEN), b"MrPurple")

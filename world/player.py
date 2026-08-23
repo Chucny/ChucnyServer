@@ -478,13 +478,17 @@ class Player:
 
 def use(username):
     """Make `username` the account for this request (called by rpc.py)."""
-    name = username or "player"
+    # Resolve a codename typed at login/RPC to the technical account so a second
+    # device logging in with the displayed name hits the SAME save, not a new one.
+    # The cache key is the SAFE filename key, so Trainer/trainer/TRAINER all map
+    # to one Player object instead of duplicating state over the same JSON file.
+    key = _safe_name(resolve_account(username) or (username or "player"))
     with _lock:
-        p = _players.get(name)
+        p = _players.get(key)
         loaded = p is None
         if loaded:
-            p = Player(name)
-            path = os.path.join(SAVES_DIR, _safe_name(name) + ".json")
+            p = Player(key)
+            path = os.path.join(SAVES_DIR, key + ".json")
             if os.path.exists(path):
                 p.load_from(path)
             else:
@@ -492,9 +496,9 @@ def use(username):
                     f.endswith(".json") for f in os.listdir(SAVES_DIR)
                 )
                 if not have_any and os.path.exists(SAVE_FILE) and p.load_from(SAVE_FILE):
-                    p.username = name
+                    p.username = key
                 p.save()
-            _players[name] = p
+            _players[key] = p
     _current.player = p
     if loaded:
         _backfill_legacy_badge_progress()
@@ -503,7 +507,7 @@ def use(username):
 
 def avatar_for(username: str) -> dict[int, int]:
     """Return an account avatar without switching the current player."""
-    name = username or ""
+    name = _safe_name(username) if username else ""
     if not name:
         return dict(DEFAULT_AVATAR)
     with _lock:
@@ -518,7 +522,7 @@ def avatar_for(username: str) -> dict[int, int]:
 
 def codename_for(username: str) -> str:
     """Return an account display name without switching the current player."""
-    name = username or ""
+    name = _safe_name(username) if username else ""
     if not name:
         return ""
     with _lock:
@@ -532,7 +536,7 @@ def codename_for(username: str) -> str:
 
 def team_for(username: str) -> int:
     """Return an account team without switching the current player."""
-    name = username or ""
+    name = _safe_name(username) if username else ""
     if not name:
         return 0
     with _lock:
@@ -685,7 +689,7 @@ def acting_as(username):
 
 def onboarding_needed(username: str) -> bool:
     """A player needs native onboarding until it has a team or full profile."""
-    name = username or ""
+    name = _safe_name(username) if username else ""
     if not name:
         return True
     with _lock:
