@@ -24,6 +24,8 @@ import threading
 import time
 
 import settings as _cfg
+import pb
+
 
 
 # ==============================================================================
@@ -72,6 +74,9 @@ _STARTING_BAG = {
     ITEM_RAZZ_BERRY: 20,
 }
 
+DEFAULT_AVATAR = {2: 1, 3: 1, 4: 1, 5: 1, 6: 0, 7: 1, 8: 0, 9: 1, 10: 1}
+
+
 # Real 2016 XP thresholds (PlayerLevelSettings.required_experience).
 LEVEL_XP = [
     0, 1000, 3000, 6000, 10000, 15000, 21000, 28000, 36000, 45000,
@@ -80,6 +85,100 @@ LEVEL_XP = [
     1350000, 1650000, 2000000, 2500000, 3000000, 3750000, 4750000,
     6000000, 7500000, 9500000, 12000000, 15000000, 20000000
 ]
+
+
+def _unpack_badge_thresholds(raw):
+    values, value, shift = [], 0, 0
+    for byte in raw:
+        value |= (byte & 0x7F) << shift
+        if byte & 0x80:
+            shift += 7
+        else:
+            values.append(value)
+            value = shift = 0
+    return tuple(values) if shift == 0 else ()
+
+
+def _load_badge_definitions():
+    try:
+        with open(os.path.join(HERE, "fixtures", "badges",
+                               "game_master_badges_0.29.0.json"),
+                  encoding="utf-8") as fh:
+            fixture = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+
+    definitions = {}
+    for key, body in fixture.items():
+        if not isinstance(key, str) or not isinstance(body, str):
+            continue
+        try:
+            fields = pb.decode(bytes.fromhex(body))
+        except ValueError:
+            continue
+        badge_type = pb.get(fields, 1, pb.WT_VARINT)
+        max_rank = pb.get(fields, 2, pb.WT_VARINT)
+        packed = pb.get(fields, 3, pb.WT_LEN)
+        thresholds = _unpack_badge_thresholds(packed) if isinstance(packed, bytes) else ()
+        if (type(badge_type) is int and badge_type >= 0
+                and type(max_rank) is int and max_rank >= 0 and thresholds):
+            definitions[key] = {
+                "type": badge_type,
+                "max_rank": max_rank,
+                "thresholds": thresholds,
+            }
+    return definitions
+
+
+BADGE_DEFINITIONS = _load_badge_definitions()
+
+
+_POKEMON_TYPE_NAMES = (
+    "", "NORMAL", "FIGHTING", "FLYING", "POISON", "GROUND", "ROCK", "BUG",
+    "GHOST", "STEEL", "FIRE", "WATER", "GRASS", "ELECTRIC", "PSYCHIC",
+    "ICE", "DRAGON", "DARK", "FAIRY",
+)
+_TYPE_BADGES = None
+
+
+def type_badges_from_game_master(data):
+    """Return every species' fixture-backed primary and secondary type badges."""
+    badges = {}
+    for raw_template in pb.get_all(pb.decode(data), 2):
+        template = pb.decode(raw_template)
+        settings = pb.get(template, 2, pb.WT_LEN)
+        if not isinstance(settings, bytes):
+            continue
+        pokemon = pb.decode(settings)
+        pokemon_id = pb.get(pokemon, 1, pb.WT_VARINT)
+        if not isinstance(pokemon_id, int) or pokemon_id <= 0:
+            continue
+        keys = []
+        for type_id in (pb.get(pokemon, 4, pb.WT_VARINT),
+                        pb.get(pokemon, 5, pb.WT_VARINT)):
+            if isinstance(type_id, int) and 0 < type_id < len(_POKEMON_TYPE_NAMES):
+                key = "BADGE_TYPE_" + _POKEMON_TYPE_NAMES[type_id]
+                if key in BADGE_DEFINITIONS and key not in keys:
+                    keys.append(key)
+        if keys:
+            badges[pokemon_id] = tuple(keys)
+    return badges
+
+
+def _type_badges():
+    global _TYPE_BADGES
+    if _TYPE_BADGES is None:
+        try:
+            with open(os.path.join(HERE, "game_master.bin"), "rb") as fh:
+                _TYPE_BADGES = type_badges_from_game_master(fh.read())
+        except (OSError, IndexError, ValueError):
+            _TYPE_BADGES = {}
+    return _TYPE_BADGES
+
+
+def _record_type_badges(pokemon_id):
+    for key in dict.fromkeys(_type_badges().get(int(pokemon_id), ())):
+        record_badge_progress(key, 1)
 
 
 # ==============================================================================
@@ -143,6 +242,35 @@ def _hash_pw(password, salt=None):
     return f"{salt}${h}"
 
 
+def _load_badge_counters(raw):
+    if not isinstance(raw, dict):
+        return {}
+    counters = {}
+    for key, value in raw.items():
+        try:
+            value = float(value)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(key, str) and math.isfinite(value) and value >= 0:
+            counters[key] = int(value) if value.is_integer() else value
+    return counters
+
+
+def _load_badge_pending(raw):
+    if not isinstance(raw, list):
+        return []
+    pending = []
+    for value in raw:
+        try:
+            value = int(value)
+        except (TypeError, ValueError):
+            continue
+        if value >= 0:
+            pending.append(value)
+    return pending
+
+
+
 # ==============================================================================
 # Player Entity Model
 # ==============================================================================
@@ -183,6 +311,13 @@ class Player:
         self.TEAM = 0            # 0 = not chosen yet; set in game at level 5
         self.BERRIES = {}        # encounter_id -> capture multiplier in effect
         self.PW = ""             # "salt$hash"; empty until the account is claimed
+        self.AVATAR = dict(DEFAULT_AVATAR)
+        self.CODENAME = ""
+        self.BADGE_PROGRESS = {}
+        self.BADGE_LEVELS = {}
+        self.BADGE_PENDING = []
+
+
         self.APPLIED = []        # active Lucky Egg / Incense
         self.STATS = {
             "pokemons_encountered": 0,
@@ -215,12 +350,14 @@ class Player:
             "hatched": self.HATCHED,
             "max_pokemon": self.MAX_POKEMON,
             "max_items": self.MAX_ITEMS,
-            "pokestop_cooldowns": {
-                str(fid): int(ts)
-                for fid, ts in getattr(self, "POKESTOP_COOLDOWNS", {}).items()
-                if int(ts) > int(time.time() * 1000)
-            },
+            "avatar": {str(slot): value for slot, value in self.AVATAR.items()},
+            "codename": self.CODENAME,
+            "badge_progress": self.BADGE_PROGRESS,
+            "badge_levels": self.BADGE_LEVELS,
+            "badge_pending": self.BADGE_PENDING,
+
         }
+
 
     def save(self):
         try:
@@ -295,6 +432,10 @@ class Player:
 
         self.TEAM = int(d.get("team", 0) or 0)
         self.PW = str(d.get("pw", "") or "")
+        codename = d.get("codename", "")
+        if (isinstance(codename, str) and 3 <= len(codename) <= 15
+                and codename.isascii() and codename.isalnum()):
+            self.CODENAME = codename
         self.APPLIED = [a for a in (d.get("applied") or []) if isinstance(a, dict)]
         self.EGGS = [e for e in (d.get("eggs") or []) if isinstance(e, dict)]
         inc = [i for i in (d.get("incubators") or []) if isinstance(i, dict)]
@@ -306,10 +447,25 @@ class Player:
         self.COINS = int(d.get("coins", 0) or 0)
         self.MAX_POKEMON = int(d.get("max_pokemon", 250) or 250)
         self.MAX_ITEMS = int(d.get("max_items", 350) or 350)
-    
+
+
+        saved_avatar = d.get("avatar")
+        if isinstance(saved_avatar, dict):
+            for slot, value in saved_avatar.items():
+                try:
+                    slot = int(slot)
+                except (TypeError, ValueError):
+                    continue
+                if 2 <= slot <= 10 and type(value) is int and 0 <= value <= 255:
+                    self.AVATAR[slot] = value
+
         for k, v in (d.get("stats") or {}).items():
             if k in self.STATS:
                 self.STATS[k] = v
+
+        self.BADGE_PROGRESS = _load_badge_counters(d.get("badge_progress"))
+        self.BADGE_LEVELS = _load_badge_counters(d.get("badge_levels"))
+        self.BADGE_PENDING = _load_badge_pending(d.get("badge_pending"))
 
         self.CLAIMED_LEVELS = [
             int(x)
@@ -321,6 +477,27 @@ class Player:
             self.CLAIMED_LEVELS = list(range(1, self.LEVEL + 1))
         return True
 
+    def set_avatar_slots(self, slots: dict[int, int]) -> bool:
+        if (not isinstance(slots, dict) or not slots
+                or any(type(slot) is not int or not 2 <= slot <= 10
+                       or type(value) is not int or not 0 <= value <= 255
+                       for slot, value in slots.items())):
+            return False
+        with _lock:
+            avatar = dict(self.AVATAR)
+            avatar.update(slots)
+            self.AVATAR = avatar
+        return True
+
+    def set_codename(self, codename: str) -> bool:
+        if (not isinstance(codename, str) or not 3 <= len(codename) <= 15
+                or not codename.isascii() or not codename.isalnum()):
+            return False
+        with _lock:
+            self.CODENAME = codename
+        return True
+
+
 # ==============================================================================
 # Player Session & Account Context Management
 # ==============================================================================
@@ -330,7 +507,8 @@ def use(username):
     name = username or "player"
     with _lock:
         p = _players.get(name)
-        if p is None:
+        loaded = p is None
+        if loaded:
             p = Player(name)
             path = os.path.join(SAVES_DIR, _safe_name(name) + ".json")
             if os.path.exists(path):
@@ -344,8 +522,51 @@ def use(username):
                 p.save()
             _players[name] = p
     _current.player = p
+    if loaded:
+        _backfill_legacy_badge_progress()
     return p
 
+
+def avatar_for(username: str) -> dict[int, int]:
+    """Return an account avatar without switching the current player."""
+    name = username or ""
+    if not name:
+        return dict(DEFAULT_AVATAR)
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return dict(player.AVATAR)
+    player = Player(name)
+    if player.load_from(player.file):
+        return dict(player.AVATAR)
+    return dict(DEFAULT_AVATAR)
+
+
+def codename_for(username: str) -> str:
+    """Return an account display name without switching the current player."""
+    name = username or ""
+    if not name:
+        return ""
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return player.CODENAME
+    player = Player(name)
+    return player.CODENAME if player.load_from(player.file) else ""
+
+
+
+def team_for(username: str) -> int:
+    """Return an account team without switching the current player."""
+    name = username or ""
+    if not name:
+        return 0
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return player.TEAM
+    player = Player(name)
+    return player.TEAM if player.load_from(player.file) else 0
 
 def current():
     p = getattr(_current, "player", None)
@@ -356,6 +577,63 @@ def current():
 
 def save():
     current().save()
+
+
+def record_badge_progress(key, amount):
+    """Add progress for one fixture-defined badge and queue newly reached ranks."""
+    definition = BADGE_DEFINITIONS.get(key)
+    try:
+        amount = float(amount)
+    except (TypeError, ValueError):
+        return 0
+    if definition is None or not math.isfinite(amount) or amount < 0:
+        return current().BADGE_LEVELS.get(key, 0)
+
+    p = current()
+    with _lock:
+        progress = p.BADGE_PROGRESS.get(key, 0) + amount
+        p.BADGE_PROGRESS[key] = int(progress) if progress.is_integer() else progress
+        level = min(
+            definition["max_rank"],
+            sum(progress >= threshold for threshold in definition["thresholds"]),
+        )
+        previous = p.BADGE_LEVELS.get(key, 0)
+        if level > previous:
+            p.BADGE_LEVELS[key] = level
+            p.BADGE_PENDING.extend([definition["type"]] * (level - previous))
+    p.save()
+    return level
+
+def _backfill_legacy_badge_progress():
+    """Bring fixture-backed aggregate badges up to their saved stat counters."""
+    p = current()
+    for key, stat in (
+        ("BADGE_CAPTURE_TOTAL", "pokemons_captured"),
+        ("BADGE_POKEDEX_ENTRIES", "unique_pokedex_entries"),
+        ("BADGE_POKESTOPS_VISITED", "poke_stop_visits"),
+        ("BADGE_TRAVEL_KM", "km_walked"),
+    ):
+        try:
+            value = float(p.STATS[stat])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value < 0:
+            continue
+        progress = p.BADGE_PROGRESS.get(key, 0)
+        if value > progress:
+            record_badge_progress(key, value - progress)
+        elif key in p.BADGE_PROGRESS:
+            record_badge_progress(key, 0)
+
+
+def drain_badge_pending():
+    """Return and persistently clear the badges awaiting client acknowledgement."""
+    p = current()
+    with _lock:
+        pending = list(p.BADGE_PENDING)
+        p.BADGE_PENDING.clear()
+    p.save()
+    return pending
 
 
 def accounts():
@@ -408,6 +686,20 @@ def acting_as(username):
     finally:
         _current.player = prev
 
+
+def onboarding_needed(username: str) -> bool:
+    """A player needs native onboarding until it has a team or full profile."""
+    name = username or ""
+    if not name:
+        return True
+    with _lock:
+        player = _players.get(name)
+        if player is not None:
+            return player.TEAM == 0 and (not player.CODENAME or not player.CAUGHT)
+    player = Player(name)
+    if not player.load_from(player.file):
+        return True
+    return player.TEAM == 0 and (not player.CODENAME or not player.CAUGHT)
 
 def check_login(username, password):
     """(ok, reason, name). The FIRST login for a name claims it and sets the password."""
@@ -467,7 +759,8 @@ def has_password(username):
 _FORWARD = {
     "BAG", "CAUGHT", "CANDY", "STARDUST", "XP", "LEVEL", "COINS", "DELETED",
     "POKEDEX", "EGGS", "INCUBATORS", "HATCHED", "TEAM", "BERRIES", "APPLIED",
-    "MAX_POKEMON", "MAX_ITEMS", "CLAIMED_LEVELS", "STATS"
+    "MAX_POKEMON", "MAX_ITEMS", "CLAIMED_LEVELS", "STATS", "BADGE_PROGRESS",
+    "BADGE_LEVELS", "BADGE_PENDING"
 }
 
 
@@ -603,6 +896,8 @@ def bump(counter, n=1):
         if counter in p.STATS:
             p.STATS[counter] += n
     p.save()
+    if counter == "poke_stop_visits":
+        record_badge_progress("BADGE_POKESTOPS_VISITED", n)
 
 
 def level_claimed(level):
@@ -639,7 +934,38 @@ def add_caught(uid, pokemon_id, cp):
         p.STATS["unique_pokedex_entries"] = len({c["pokemon_id"] for c in p.CAUGHT})
         n = len(p.CAUGHT)
     p.save()
+    record_badge_progress("BADGE_CAPTURE_TOTAL", 1)
+    if int(pokemon_id) == 25:
+        record_badge_progress("BADGE_PIKACHU", 1)
+    _record_type_badges(pokemon_id)
     return n
+
+
+def add_tutorial_starter(pokemon_id, cp=10):
+    """Persist one selected starter, or return the account's existing Pokémon."""
+    p = current()
+    with _lock:
+        if p.CAUGHT:
+            return dict(p.CAUGHT[0])
+        uid = new_uid(pokemon_id)
+        starter = {
+            "uid": uid,
+            "pokemon_id": pokemon_id,
+            "cp": cp,
+            "caught_ms": int(time.time() * 1000),
+        }
+        p.CAUGHT.append(starter)
+        p.STATS["pokemons_captured"] += 1
+        p.STATS["unique_pokedex_entries"] = 1
+        entry = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
+        entry[1] += 1
+        entry[0] = max(entry[0], entry[1])
+    p.save()
+    record_badge_progress("BADGE_CAPTURE_TOTAL", 1)
+    if int(pokemon_id) == 25:
+        record_badge_progress("BADGE_PIKACHU", 1)
+    record_badge_progress("BADGE_POKEDEX_ENTRIES", 1)
+    return dict(starter)
 
 
 def caught():
@@ -764,10 +1090,13 @@ def pokedex_caught(pokemon_id):
     p = current()
     with _lock:
         e = p.POKEDEX.setdefault(int(pokemon_id), [0, 0])
+        new_entry = e[1] == 0
         e[1] += 1
         if e[0] < e[1]:
             e[0] = e[1]          # caught implies seen
     p.save()
+    if new_entry:
+        record_badge_progress("BADGE_POKEDEX_ENTRIES", 1)
 
 
 def pokedex():
@@ -799,6 +1128,7 @@ def add_distance(lat, lng):
         return 0.0
     with _lock:
         p.STATS["km_walked"] = km_walked() + metres / 1000.0
+    record_badge_progress("BADGE_TRAVEL_KM", metres / 1000.0)
     return metres
 
 
@@ -907,6 +1237,7 @@ def check_hatches(pick_species):
             done.append(rec)
     if done:
         p.save()
+        record_badge_progress("BADGE_HATCHED_TOTAL", len(done))
     return done
 
 

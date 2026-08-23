@@ -14,9 +14,11 @@ Milestone 1: get the player logged in and onto the map.
 api_url stays on pgorelease.nianticlabs.com so the client keeps hitting a host
 our DNS redirect + TLS cert already cover.
 """
-import struct
 import os
+import struct
+import threading
 import time
+
 import pb
 import protocol as P
 
@@ -26,6 +28,23 @@ ASSET_BASE_URL = f"https://{API_HOST}/asset"   # where GET_DOWNLOAD_URLS points
 _dump_budget = [8]                 # verbosely dump the first N envelopes
 _last_loc = [0.0, 0.0]            # last non-zero player location we've seen
 _last_user = [None]               # last trainer to make a request (for /shop)
+_teleport_lock = threading.Lock()
+_teleports = {}
+
+
+def set_teleport(username: str, lat: float, lng: float) -> None:
+    with _teleport_lock:
+        _teleports[username] = (lat, lng)
+
+
+def map_position(username: str, lat: float, lng: float) -> tuple[float, float]:
+    with _teleport_lock:
+        return _teleports.get(username, (lat, lng))
+
+
+def teleports() -> dict[str, tuple[float, float]]:
+    with _teleport_lock:
+        return dict(_teleports)
 
 
 def _envelope_latlng(fields):
@@ -35,6 +54,14 @@ def _envelope_latlng(fields):
         return None
     return (struct.unpack("<d", struct.pack("<Q", la))[0],
             struct.unpack("<d", struct.pack("<Q", lo))[0])
+
+
+def capture_request(request_type: int, message: bytes, log) -> None:
+    if os.environ.get("CAPTURE_RPC_REQUESTS") == "1":
+        payload = ("<redacted>" if request_type in (P.RT.SET_AVATAR, P.RT.CLAIM_CODENAME)
+                   else message.hex())
+        log(f"[capture] type={request_type} name={P.rt_name(request_type)} "
+            f"message={payload}\n")
 
 
 def _build_returns(reqs, username, log):
@@ -57,10 +84,14 @@ def _build_returns(reqs, username, log):
         if rtype == P.RT.GET_PLAYER:
             returns.append(P.build_get_player_response(username))
             log(f"      -> GET_PLAYER answered as {username!r}")
+        elif rtype == P.RT.GET_PLAYER_PROFILE:
+            returns.append(P.build_get_player_profile_response())
+            log("      -> GET_PLAYER_PROFILE answered with badge progress")
         elif rtype == P.RT.GET_MAP_OBJECTS:
             cells, lat, lng = P.parse_get_map_objects(msg)
             if not lat and not lng:                 # map msg had no fix; use the
                 lat, lng = _last_loc                # player's last known location
+            lat, lng = map_position(username, lat, lng)
             returns.append(P.build_get_map_objects_response(cells, lat, lng))
             log(f"      -> GET_MAP_OBJECTS: {len(cells)} cells @ ({lat:.5f},{lng:.5f}) + spawns")
         elif rtype == P.RT.GET_INVENTORY:
@@ -182,6 +213,48 @@ def _build_returns(reqs, username, log):
             log(f"      -> USE_ITEM_CAPTURE item={iid} encounter={eid} -> " +
                 ("Razz Berry used, next ball is much likelier to hold"
                  if ok else "couldn't use that item"))
+        elif rtype == P.RT.SET_AVATAR:
+            try:
+                outer = pb.decode(msg)
+                if (len(outer) != 1 or outer[0]["field"] != 2
+                        or outer[0]["wire"] != pb.WT_LEN):
+                    raise ValueError
+                if pb.Writer().bytes_(2, outer[0]["value"]).to_bytes() != msg:
+                    raise ValueError
+                slots = {}
+                canonical = pb.Writer()
+                for field in pb.decode(outer[0]["value"]):
+                    slot, value = field["field"], field["value"]
+                    if (field["wire"] != pb.WT_VARINT or not 2 <= slot <= 10
+                            or not 0 <= value <= 255 or slot in slots):
+                        raise ValueError
+                    slots[slot] = value
+                    canonical.uint(slot, value)
+                if (canonical.to_bytes() != outer[0]["value"]
+                        or not world.current().set_avatar_slots(slots)):
+                    raise ValueError
+            except (IndexError, struct.error, ValueError):
+                returns.append(b"")
+            else:
+                world.current().save()
+                returns.append(P.build_set_avatar_response())
+                log("      -> SET_AVATAR success")
+        elif rtype == P.RT.CLAIM_CODENAME:
+            try:
+                fields = pb.decode(msg)
+                if (not P.avatar_onboarding_capture(username) or len(fields) != 1
+                        or fields[0]["field"] != 1 or fields[0]["wire"] != pb.WT_LEN):
+                    raise ValueError
+                codename = fields[0]["value"].decode("ascii")
+                if (pb.Writer().string(1, codename).to_bytes() != msg
+                        or not world.current().set_codename(codename)):
+                    raise ValueError
+            except (AttributeError, IndexError, UnicodeDecodeError, ValueError):
+                returns.append(b"")
+            else:
+                world.current().save()
+                returns.append(P.build_claim_codename_response(codename))
+                log("      -> CLAIM_CODENAME success")
         elif rtype == P.RT.SET_PLAYER_TEAM:
             team = P.parse_set_player_team(msg)
             r = P.build_set_player_team_response(team, username)
@@ -191,6 +264,36 @@ def _build_returns(reqs, username, log):
             log(f"      -> SET_PLAYER_TEAM -> " +
                 (f"joined {names.get(team, team)}" if st == 1 else
                  "team was already chosen" if st == 2 else "failed"))
+        elif (rtype == P.RT.MARK_TUTORIAL_COMPLETE
+              and P.avatar_onboarding_capture(username)
+              and msg == bytes.fromhex("0a01001001")):
+            returns.append(P.build_mark_tutorial_complete_response())
+            log("      -> MARK_TUTORIAL_COMPLETE acknowledged")
+        elif rtype == P.RT.ENCOUNTER_TUTORIAL_COMPLETE:
+            try:
+                fields = pb.decode(msg)
+                if (not P.avatar_onboarding_capture(username) or len(fields) != 1
+                        or fields[0]["field"] != 1
+                        or fields[0]["wire"] != pb.WT_VARINT
+                        or fields[0]["value"] not in (1, 4, 7)
+                        or pb.Writer().uint(1, fields[0]["value"]).to_bytes() != msg):
+                    raise ValueError
+            except (IndexError, struct.error, ValueError):
+                returns.append(b"")
+            else:
+                starter = world.add_tutorial_starter(fields[0]["value"])
+                caught = world.caught()
+                if (len(caught) != 1 or caught[0]["uid"] != starter["uid"]
+                        or starter["pokemon_id"] != fields[0]["value"]):
+                    returns.append(b"")
+                else:
+                    returns.append(pb.Writer()
+                                   .uint(1, 1)
+                                   .message(2, P.build_pokemon_data(
+                                       starter["pokemon_id"], starter["uid"], starter["cp"],
+                                       extra=starter))
+                                   .to_bytes())
+                    log(f"      -> ENCOUNTER_TUTORIAL_COMPLETE #{starter['pokemon_id']}")
         elif rtype == P.RT.GET_HATCHED_EGGS:
             import world
             for h in world.check_hatches(P.hatch_species):
@@ -270,6 +373,9 @@ def _build_returns(reqs, username, log):
             returns.append(P.build_level_up_rewards_response(lvl))
             log(f"      -> LEVEL_UP_REWARDS level {lvl}: "
                 + ("AWARDED_ALREADY (no popup)" if already else "SUCCESS, items granted"))
+        elif rtype == P.RT.CHECK_AWARDED_BADGES:
+            returns.append(P.build_check_awarded_badges_response())
+            log("      -> CHECK_AWARDED_BADGES acknowledged pending badges")
         elif rtype == P.RT.FORT_SEARCH:
             fid, _, _ = P.parse_fort_request(msg)
             returns.append(P.build_fort_search_response(fid, int(time.time() * 1000)))
@@ -334,6 +440,8 @@ def handle(method, path, query, headers, body, log):
         return 405, {"Content-Type": "text/plain"}, b"method not allowed"
 
     request_id, reqs, fields = P.parse_request_envelope(body)
+    for rtype, message in reqs:
+        capture_request(rtype, message, log)
     username = P.resolve_username(fields) or "Trainer"
     _last_user[0] = username
 
@@ -349,15 +457,17 @@ def handle(method, path, query, headers, body, log):
             pass
         log(f"[loc] player at {ll[0]:.5f},{ll[1]:.5f}")
 
-    if _dump_budget[0] > 0:
-        _dump_budget[0] -= 1
-        import pb
-        log(f"[rpc] {path}  request_id={request_id}  username={username!r}  "
-            f"requests={[P.rt_name(t) for t, _ in reqs]}")
-        log("[rpc] ---- raw RequestEnvelope ----\n" + pb.pretty(body))
-        log("[rpc] -------------------------------")
-    else:
-        log(f"[rpc] {path}  reqs={[P.rt_name(t) for t, _ in reqs]}  user={username!r}")
+    if (os.environ.get("CAPTURE_RPC_REQUESTS") != "1"
+            and not any(t == P.RT.CLAIM_CODENAME for t, _ in reqs)):
+        if _dump_budget[0] > 0:
+            _dump_budget[0] -= 1
+            import pb
+            log(f"[rpc] {path}  request_id={request_id}  username={username!r}  "
+                f"requests={[P.rt_name(t) for t, _ in reqs]}")
+            log("[rpc] ---- raw RequestEnvelope ----\n" + pb.pretty(body))
+            log("[rpc] -------------------------------")
+        else:
+            log(f"[rpc] {path}  reqs={[P.rt_name(t) for t, _ in reqs]}  user={username!r}")
 
     # Bootstrap handshake: tell the client which host to use from now on.
     if path == "/plfe/rpc":

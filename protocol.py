@@ -77,6 +77,7 @@ class RT:
     SET_FAVORITE_POKEMON = 148
     NICKNAME_POKEMON = 149
     GET_HATCHED_EGGS = 126
+    ENCOUNTER_TUTORIAL_COMPLETE = 127
     LEVEL_UP_REWARDS = 128
     CHECK_AWARDED_BADGES = 129
     GET_GYM_DETAILS = 134
@@ -87,7 +88,10 @@ class RT:
     USE_INCENSE = 141
     GET_INCENSE_POKEMON = 142
     ADD_FORT_MODIFIER = 144
+    SET_AVATAR = 404
+    CLAIM_CODENAME = 403
     SET_PLAYER_TEAM = 405
+    MARK_TUTORIAL_COMPLETE = 406
     USE_ITEM_REVIVE = 116
     RECYCLE_INVENTORY_ITEM = 137
     GET_MAP_OBJECTS = 106
@@ -116,9 +120,19 @@ PD_CURRENCIES = 14
 GP_SUCCESS = 1
 GP_PLAYER_DATA = 2
 
-# Mark the whole new-user tutorial as already finished so the client skips
-# straight to the map. Extra/unknown enum values are ignored by the client.
+# New accounts enter onboarding until they have both a codename and starter.
+# Team selection may happen later at a gym, so TEAM=0 alone is not sufficient.
 TUTORIAL_COMPLETE = [0, 1, 2, 3, 4, 5, 6, 7]
+
+
+def tutorial_state():
+    return TUTORIAL_COMPLETE
+
+
+def avatar_onboarding_capture(username: str) -> bool:
+    return _world.onboarding_needed(username)
+
+
 
 # TeamColor: 0=NEUTRAL, 1=BLUE(Mystic), 2=RED(Valor), 3=YELLOW(Instinct).
 # Must be non-zero or the client refuses Gym interaction ("join a team first").
@@ -126,18 +140,18 @@ def _team():
     return _cfg.get("gyms", "team", env="TEAM", cast=int)
 
 
-def build_player_avatar() -> bytes:
-    # Minimal cosmetic avatar; numbers are non-critical (purely visual).
+def build_player_avatar(avatar: dict[int, int] | None = None) -> bytes:
+    slots = _world.DEFAULT_AVATAR if avatar is None else avatar
     return (pb.Writer()
-            .uint(2, 1)   # skin
-            .uint(3, 1)   # hair
-            .uint(4, 1)   # shirt
-            .uint(5, 1)   # pants
-            .uint(6, 0)   # hat
-            .uint(7, 1)   # shoes
-            .uint(8, 0)   # gender (0=male)
-            .uint(9, 1)   # eyes
-            .uint(10, 1)  # backpack
+            .uint(2, slots.get(2, _world.DEFAULT_AVATAR[2]))
+            .uint(3, slots.get(3, _world.DEFAULT_AVATAR[3]))
+            .uint(4, slots.get(4, _world.DEFAULT_AVATAR[4]))
+            .uint(5, slots.get(5, _world.DEFAULT_AVATAR[5]))
+            .uint(6, slots.get(6, _world.DEFAULT_AVATAR[6]))
+            .uint(7, slots.get(7, _world.DEFAULT_AVATAR[7]))
+            .uint(8, slots.get(8, _world.DEFAULT_AVATAR[8]))
+            .uint(9, slots.get(9, _world.DEFAULT_AVATAR[9]))
+            .uint(10, slots.get(10, _world.DEFAULT_AVATAR[10]))
             .to_bytes())
 
 
@@ -175,17 +189,20 @@ def _storage():
 
 
 def build_player_data(username: str) -> bytes:
+    display_name = _world.codename_for(username) or username
+    team = _world.team_for(username)
     w = (pb.Writer()
          .uint(PD_CREATION_MS, int(time.time() * 1000) - 86_400_000)
-         .string(PD_USERNAME, username)
-         .uint(PD_TEAM, _team())                     # non-zero so Gyms are usable
-         .packed_varints(PD_TUTORIAL, TUTORIAL_COMPLETE)
-         .message(PD_AVATAR, build_player_avatar())
-         .uint(PD_MAX_POKEMON, _storage()[0])
-         .uint(PD_MAX_ITEMS, _storage()[1])
-         .message(PD_CURRENCIES, build_currency("POKECOIN", _coins()))
-         .message(PD_CURRENCIES, build_currency("STARDUST", _stardust())))
-    return w.to_bytes()
+         .string(PD_USERNAME, display_name))
+    if not avatar_onboarding_capture(username):
+        w = (w.uint(PD_TEAM, team)
+             .packed_varints(PD_TUTORIAL, tutorial_state())
+             .message(PD_AVATAR, build_player_avatar(_world.avatar_for(username))))
+    return (w.uint(PD_MAX_POKEMON, _storage()[0])
+            .uint(PD_MAX_ITEMS, _storage()[1])
+            .message(PD_CURRENCIES, build_currency("POKECOIN", _coins()))
+            .message(PD_CURRENCIES, build_currency("STARDUST", _stardust()))
+            .to_bytes())
 
 
 def build_get_player_response(username: str) -> bytes:
@@ -193,6 +210,49 @@ def build_get_player_response(username: str) -> bytes:
             .bool_(GP_SUCCESS, True)
             .message(GP_PLAYER_DATA, build_player_data(username))
             .to_bytes())
+
+
+def build_get_player_profile_response() -> bytes:
+    """GetPlayerProfileResponse { result=1, badge=3 repeated }."""
+    player = _world.current()
+    response = pb.Writer().uint(1, 1)
+    for key, progress in player.BADGE_PROGRESS.items():
+        definition = _world.BADGE_DEFINITIONS.get(key)
+        rank = player.BADGE_LEVELS.get(key, 0)
+        if not definition or not (rank or progress):
+            continue
+        badge = (pb.Writer()
+                 .uint(1, definition["type"])
+                 .uint(2, rank)
+                 .double(5, float(progress))
+                 .to_bytes())
+        response.message(3, badge)
+    return response.to_bytes()
+
+
+def build_mark_tutorial_complete_response() -> bytes:
+    return pb.Writer().bool_(1, True).to_bytes()
+
+
+def build_claim_codename_response(codename: str) -> bytes:
+    return (pb.Writer()
+            .string(1, codename)
+            .bool_(3, True)
+            .uint(4, 1)
+            .to_bytes())
+
+
+def build_set_avatar_response() -> bytes:
+    return pb.Writer().uint(1, 1).to_bytes()
+
+
+def build_check_awarded_badges_response() -> bytes:
+    """CheckAwardedBadgesResponse { success=1, awarded_badge=2 repeated }."""
+    import world
+    w = pb.Writer().bool_(1, True)
+    for badge_id in world.drain_badge_pending():
+        w.uint(2, badge_id)
+    return w.to_bytes()
 
 
 # ------------------------------------------------------------- GET_INVENTORY
@@ -1397,7 +1457,7 @@ def build_catch_pokemon_response(encounter_id, pokeball, hit, now_ms,
     seed = (int(encounter_id) * 0x9E3779B97F4A7C15) ^ (int(now_ms) * 0xC2B2AE3D27D4EB4F)
     seed = (seed ^ (seed >> 29)) & 0x7FFFFFFFFFFFFFFF
     rnd = _random.Random(seed)
-    if rnd.random() > chance:
+    if world.current().STATS["pokemons_captured"] > 0 and rnd.random() > chance:
         world.berry_mult(encounter_id, consume=True)      # the berry is used up
         flee = _cfg.get("catching", "flee_chance", cast=float) / max(1.0, mult)
         if rnd.random() < flee:
@@ -1479,6 +1539,25 @@ def _evo_table():
         _EVO = table
     return _EVO
 
+def extract_badge_templates(data: bytes) -> dict[str, bytes]:
+    badges = {}
+    for raw_template in pb.get_all(pb.decode(data), 2):
+        template = pb.decode(raw_template)
+        raw_id = pb.get(template, 1, pb.WT_LEN)
+        if not isinstance(raw_id, bytes):
+            continue
+        try:
+            template_id = raw_id.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "BADGE" not in template_id:
+            continue
+        for field in template:
+            if field["field"] != 1 and field["wire"] == pb.WT_LEN and field["value"]:
+                badges[template_id] = field["value"]
+                break
+    return badges
+
 
 def pokemon_family(pokemon_id):
     return _evo_table().get(pokemon_id, {}).get("family", pokemon_id)
@@ -1552,6 +1631,7 @@ def build_evolve_response(uid) -> bytes:
     new_id = _random.Random(uid).choice(evo)                   # Eevee branches
     newcp = int(c["cp"] * 1.6) + 20
     world.update_caught(uid, pokemon_id=new_id, cp=newcp)
+    world.record_badge_progress("BADGE_EVOLVED_TOTAL", 1)
     xp = _cfg.get("pokemon", "evolve_xp", cast=int)
     world.add_xp(xp)
     world.add_candy(fam, 1)                                    # evolving pays 1 back
@@ -1605,11 +1685,11 @@ def _battle_pokemon_info(pokemon_id, uid, cp, hp, energy=0, extra=None,
             .to_bytes())
 
 
-def _battle_participant(pokemon_id, uid, cp, hp, trainer, level) -> bytes:
+def _battle_participant(pokemon_id, uid, cp, hp, trainer, level, avatar=None) -> bytes:
     """BattleParticipant { active_pokemon=1, trainer_public_profile=2,
     reverse_pokemon=3, defeated_pokemon=4 }."""
     profile = (pb.Writer().string(1, trainer).int_(2, level)
-               .message(3, build_player_avatar()).to_bytes())
+               .message(3, build_player_avatar(avatar)).to_bytes())
     return (pb.Writer()
             .message(1, _battle_pokemon_info(pokemon_id, uid, cp, hp))
             .message(2, profile)
@@ -1698,7 +1778,7 @@ def build_start_gym_battle_response(gym_id, attacker_uids, defender_uid, now_ms)
                           "start": now_ms, "player": world.current().username}
     lvl, _xp = world.stats()
     me = _battle_participant(atk["pokemon_id"], atk["uid"], atk["cp"], ahp,
-                             world.current().username, lvl)
+                             world.current().username, lvl, world.current().AVATAR)
     # A raid boss is not a person -- report level -1 so nobody mistakes "raid"
     # for a real trainer who parked a Mewtwo in every gym.
     def_lvl = -1 if is_raid else lvl
@@ -1723,7 +1803,9 @@ def build_start_gym_battle_response(gym_id, attacker_uids, defender_uid, now_ms)
             .string(4, bid)
             .message(5, _battle_participant(defender["pokemon_id"], defender["uid"],
                                             defender["cp"], dhp,
-                                            defender.get("trainer", "Rival"), def_lvl))
+                                            defender.get("trainer", "Rival"), def_lvl,
+                                            world.avatar_for(defender.get("owner")
+                                                             or defender.get("trainer"))))
             .message(6, log)
             .to_bytes())
 
@@ -1928,6 +2010,9 @@ def build_attack_gym_response(gym_id, battle_id, actions, now_ms, last_seen=0) -
             else:
                 world.clear_gym(gym_id)
             world.add_xp(_cfg.get("battles", "win_xp", cast=int))
+            world.record_badge_progress(
+                "BADGE_BATTLE_TRAINING_WON"
+                if b.get("type") == BT_TRAINING else "BADGE_BATTLE_ATTACK_WON", 1)
             log_actions.append(_action(BA_VICTORY, t, 0, 0, 0,
                                        b["attacker"], b["defender"]))
     elif b["atk_hp"] <= 0:
@@ -1976,7 +2061,8 @@ def build_gym_membership(m) -> bytes:
     profile = (pb.Writer()
                .string(1, m.get("trainer") or "Trainer")
                .int_(2, lvl)
-               .message(3, build_player_avatar())
+               .message(3, build_player_avatar(world.avatar_for(m.get("owner")
+                                                                or m.get("trainer"))))
                .to_bytes())
     return (pb.Writer()
             .message(1, build_pokemon_data(m["pokemon_id"], m["uid"], m["cp"]))
