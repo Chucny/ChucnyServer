@@ -197,6 +197,34 @@ def _fresh_uid(used):
             return u
 
 
+def _all_known_uids():
+    """Every Pokemon uid across ALL accounts (loaded plus saves on disk).
+
+    Uniqueness must be global: two trainers catching the same spawn must not
+    receive the same Pokemon id, or gym deploy and any uid-keyed shared state
+    collides between them.
+    """
+    uids = set()
+    with _lock:
+        for p in _players.values():
+            uids.update(int(c.get("uid", 0)) for c in p.CAUGHT)
+            uids.update(p.DELETED)
+    try:
+        for fn in os.listdir(SAVES_DIR):
+            if not fn.endswith(".json") or fn.startswith("_"):
+                continue
+            try:
+                with open(os.path.join(SAVES_DIR, fn), encoding="utf-8") as fh:
+                    d = json.load(fh)
+                uids.update(int(c.get("uid", 0)) for c in (d.get("caught") or []))
+                uids.update(int(k) for k in (d.get("deleted") or {}))
+            except (OSError, ValueError, TypeError):
+                continue
+    except OSError:
+        pass
+    return uids
+
+
 def new_uid(seed=0):
     """A UNIQUE id for a newly caught Pokemon.
 
@@ -206,11 +234,9 @@ def new_uid(seed=0):
     the first instead of showing up, and transferring one removed only one of the
     duplicates while the rest kept it on screen.
     """
-    p = current()
-    with _lock:
-        used = {int(c.get("uid", 0)) for c in p.CAUGHT} | set(p.DELETED)
-        base = (int(seed) ^ 0xC0FFEE) & 0x3FFFFFFFFFFFFFFF
-        return base if base and base not in used else _fresh_uid(used)
+    used = _all_known_uids()
+    base = (int(seed) ^ 0xC0FFEE) & 0x3FFFFFFFFFFFFFFF
+    return base if base and base not in used else _fresh_uid(used)
 
 
 def _hash_pw(password, salt=None):

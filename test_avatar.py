@@ -459,3 +459,29 @@ class TutorialCatchGuaranteeTest(unittest.TestCase):
         response = self._catch_with_zero_chance(later_encounter_id)
 
         self.assertEqual(pb.get(pb.decode(response), 1), 2)
+
+
+class GlobalUidTest(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+
+        self.saves = tempfile.TemporaryDirectory()
+        self.saves_dir = patch.object(world, "SAVES_DIR", self.saves.name)
+        self.saves_dir.start()
+        world._players.clear()
+        if hasattr(world._current, "player"):
+            delattr(world._current, "player")
+        self.addCleanup(world._players.clear)
+        self.addCleanup(self.saves_dir.stop)
+        self.addCleanup(self.saves.cleanup)
+
+    def test_same_spawn_gives_distinct_uids_to_two_trainers(self):
+        alice = world.use("alice")
+        world.add_caught(world.new_uid(7_777), 25, 100)
+        alice_uid = alice.CAUGHT[0]["uid"]
+
+        bob = world.use("bob")
+        bob_uid = world.new_uid(7_777)      # same spawn seed
+
+        self.assertNotEqual(bob_uid, alice_uid)
+        self.assertNotIn(bob_uid, {alice_uid})
