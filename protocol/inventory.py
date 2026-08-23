@@ -7,7 +7,10 @@ import time
 import pb
 import settings as _cfg
 import world
-from protocol.player import build_pokemon_data, current_hp, max_hp
+from protocol.player import (
+    _hp_for, build_player_data, build_pokemon_data, current_hp, max_hp,
+    pokemon_family,
+)
 
 try:
     import gamedata as _gd
@@ -169,6 +172,7 @@ def current_hp(c):
 
 
 # --------------------------------------------------------------------- EGGS
+_EGG_POOLS = None
 EGG_TIERS = (2.0, 5.0, 10.0)
 
 
@@ -179,6 +183,7 @@ def _egg_species_pools():
     rare and powerful at 10 km."""
     global _EGG_POOLS
     if _EGG_POOLS is None:
+        from protocol.map import _spawn_pool
         pool = _spawn_pool()                       # already excludes legendaries
         ranked = sorted(set(pool), key=lambda pid: _max_reachable_cp(pid))
         n = len(ranked)
