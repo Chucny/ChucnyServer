@@ -10,6 +10,15 @@ import world
 
 
 
+class PlayerModuleFacadeTest(unittest.TestCase):
+    def test_facade_reexports_player_state(self):
+        from world import player
+
+        self.assertIs(world.Player, player.Player)
+        self.assertIs(world.use, player.use)
+        self.assertIs(world.current, player.current)
+
+
 class AvatarCaptureTest(unittest.TestCase):
     def test_capture_formats_only_inner_request_metadata(self):
         with patch.dict("os.environ", {"CAPTURE_RPC_REQUESTS": "1"}, clear=False):
