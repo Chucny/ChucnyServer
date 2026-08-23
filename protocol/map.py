@@ -10,7 +10,7 @@ import pb
 import s2sphere
 import settings as _cfg
 import world as _world
-from protocol.inventory import ITEM_POKE_BALL
+from protocol.inventory import EGG_TIERS, ITEM_POKE_BALL
 from protocol.player import build_player_avatar, build_pokemon_data, default_gym_team
 
 # ------------------------------------------------------------- GET_MAP_OBJECTS
