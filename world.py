@@ -367,7 +367,7 @@ class Player:
                 json.dump(self.snapshot(), fh, indent=1)
             os.replace(tmp, self.file)     # atomic; never a half-written save
         except OSError:
-            pass                           # a failed save must never break play
+            pass                         # a failed save must never break play
 
     def load_from(self, path):
         try:
@@ -419,6 +419,16 @@ class Player:
             pid = int(c.get("pokemon_id", 0) or 0)
             if pid and pid not in self.POKEDEX:
                 self.POKEDEX[pid] = [1, 1]
+
+        now_ms = int(time.time() * 1000)
+        self.POKESTOP_COOLDOWNS = {}
+        for fid, ts in (d.get("pokestop_cooldowns") or {}).items():
+            try:
+                ts = int(ts)
+                if ts > now_ms:
+                    self.POKESTOP_COOLDOWNS[str(fid)] = ts
+            except (TypeError, ValueError):
+                pass
 
         self.TEAM = int(d.get("team", 0) or 0)
         self.PW = str(d.get("pw", "") or "")
