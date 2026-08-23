@@ -165,7 +165,7 @@ def main():
 
     if not (os.path.exists(server.CERT) and os.path.exists(server.KEY)):
         print(f"!! TLS certs not found in {os.environ['CERT_DIR']}.\n"
-              f"   Run gen_certs.py once, or ship the certs/ folder alongside this.")
+              f"   Run tools/gen_certs.py once, or ship the certs/ folder alongside this.")
         sys.exit(1)
 
     # World Manager (localhost only -- never exposed to the phone/network)

@@ -33,9 +33,10 @@ class BadgeTemplateExtractionTest(unittest.TestCase):
                          {"BADGE_CAPTURE_TOTAL": first_body})
 
     def test_checked_in_fixture_matches_local_game_master(self):
-        fixture_path = Path(__file__).parent / "fixtures" / "badges" / "game_master_badges_0.29.0.json"
+        root = Path(__file__).resolve().parent.parent
+        fixture_path = root / "fixtures" / "badges" / "game_master_badges_0.29.0.json"
         fixture = json.loads(fixture_path.read_text())
-        with open(Path(__file__).parent / "game_master.bin", "rb") as game_master:
+        with open(root / "game_master.bin", "rb") as game_master:
             actual = {template_id: body.hex()
                       for template_id, body in protocol.extract_badge_templates(game_master.read()).items()}
 

@@ -1,1 +1,6 @@
 /.worktrees/
+__pycache__/
+*.pyc
+server-log.txt*
+saves/*-test.json
+saves/avatar-rpc-*.json

@@ -2,7 +2,7 @@
 PoGO 0.29 private server — single HTTPS listener that serves both the fake PTC
 SSO (sso.pokemon.com) and the game RPC (pgorelease.nianticlabs.com), routed by
 the Host header. Both hostnames resolve to this machine via your DNS redirect,
-and one multi-SAN cert (see gen_certs.py) covers them all.
+and one multi-SAN cert (see tools/gen_certs.py) covers them all.
 
 Run:  py server.py            # listens on 0.0.0.0:443
       PORT=8443 py server.py  # custom port (for local testing without root)
@@ -93,7 +93,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     if not (os.path.exists(CERT) and os.path.exists(KEY)):
-        log("Missing certs. Run:  py gen_certs.py")
+        log("Missing certs. Run:  py tools/gen_certs.py")
         sys.exit(1)
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
     ctx.load_cert_chain(CERT, KEY)

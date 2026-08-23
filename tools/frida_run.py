@@ -1,4 +1,4 @@
-"""Spawn PoGO under Frida with hook.js applied, then keep the session alive."""
+"""Spawn PoGO under Frida with _hook.js applied, then keep the session alive."""
 import os
 import sys
 import threading
