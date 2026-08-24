@@ -1,6 +1,6 @@
 ## ChucnyServer
 
-<img src="01_SCROT.png" style="width:500px"></img><br>
+<img src="screenshots/01_SCROT.png" style="width:500px"></img><br>
 <img src="screenshots/03_SCROT" style="width: 200px;"></img><img src="screenshots/02_SCROT" style="width: 200px;"></img>
 
 ### 📁 Overview
