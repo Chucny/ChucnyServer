@@ -45,4 +45,4 @@ The reason I cannot provide you assets publicly, is because it violates **Copyri
 - **maierfelix** for writing some of the logic that is still in this server
 - **OpenStreetMap** for POIs and more
 
-### **This project is Open Source, meaning that you're free to use it, distribute it and modify it publicly with credit.**
+**This project is licensed under the Apache 2.0 license. See LICENSE file for details.**
