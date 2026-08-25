@@ -365,20 +365,22 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
     </div>
 
     <div class="card">
-      <div class="card-title">Import High-Density POIs</div>
-      <div class="controls-row">
-        <input id="poi-lat" type="number" step="any" placeholder="Lat (e.g. 44.556)" style="width: 100px">
-        <input id="poi-lng" type="number" step="any" placeholder="Lng (e.g. -49.007)" style="width: 100px">
-        <input id="poi-r" type="number" value="3" min="0.1" max="50" step="0.1" style="width: 60px" title="Radius km">
-        <span style="font-size:13px; color:var(--text-muted)">km</span>
-        <input id="poi-limit" type="number" value="5000" min="100" max="10000" style="width: 75px" title="Max POIs Limit">
-        <span style="font-size:13px; color:var(--text-muted)">Limit</span>
-        <input id="poi-gym-chance" type="number" value="15" min="0" max="100" style="width: 60px" title="Gym Chance (%)">
-        <span style="font-size:13px; color:var(--text-muted)">% Gyms</span>
-        <button class="btn-primary" onclick="importPois()">Import</button>
-      </div>
-      <div class="hint" id="poihint">Imports nodes, ways, and relations from OSM including parks, art, and transit stops.</div>
-    </div>
+  <div class="card-title">Import High-Density POIs</div>
+  <div class="controls-row">
+    <input id="poi-lat" type="number" step="any" placeholder="Lat (e.g. 44.556)" style="width: 100px">
+    <input id="poi-lng" type="number" step="any" placeholder="Lng (e.g. -49.007)" style="width: 100px">
+    <input id="poi-r" type="number" value="3" min="0.1" max="50" step="0.1" style="width: 60px" title="Radius km">
+    <span style="font-size:13px; color:var(--text-muted)">km</span>
+    <input id="poi-limit" type="number" value="5000" min="100" max="10000" style="width: 75px" title="Max POIs Limit">
+    <span style="font-size:13px; color:var(--text-muted)">Limit</span>
+    <input id="poi-gym-chance" type="number" value="15" min="0" max="100" style="width: 60px" title="Gym Chance (%)">
+    <span style="font-size:13px; color:var(--text-muted)">% Gyms</span>
+    <input id="poi-min-dist" type="number" value="2" min="0" max="50" step="1" style="width: 70px" title="Minimum Distance Between POIs (meters)">
+    <span style="font-size:13px; color:var(--text-muted)">Min Dist (m)</span>
+    <button class="btn-primary" onclick="importPois()">Import</button>
+  </div>
+  <div class="hint" id="poihint">Imports nodes, ways, and relations from OSM including parks, art, and transit stops.</div>
+</div>
 
   </div>
 
@@ -496,18 +498,35 @@ async function ring(){
     radius_m:+$('ring-r').value,gym:true});
   load();
 }
+
+
+
 async function importPois(){
   const lat = parseFloat($('poi-lat').value || player.lat);
   const lng = parseFloat($('poi-lng').value || player.lng);
-  const r_km = parseFloat($('poi-r').value || 3);
+  const r_km = parseFloat($('poi-r').value || 1.5);
   const limit = parseInt($('poi-limit').value || 5000);
-  const gym_chance = parseFloat($('poi-gym-chance').value || 0) / 100.0;
-  if(!lat || !lng){alert('Please enter latitude and longitude.'); return;}
+  const gym_chance = parseFloat($('poi-gym-chance').value || 15) / 100.0;
+  const min_dist_m = parseFloat($('poi-min-dist').value || 1.5);
+
+  if(!lat || !lng){
+    alert('Please enter latitude and longitude.');
+    return;
+  }
   $('poihint').textContent = 'Fetching high-density POIs from OpenStreetMap...';
-  const r = await post('/api/fetch_pois', {lat: lat, lng: lng, radius_km: r_km, limit: limit, gym_chance: gym_chance});
+  const r = await post('/api/fetch_pois', {
+    lat: lat,
+    lng: lng,
+    radius_km: r_km,
+    limit: limit,
+    gym_chance: gym_chance,
+    min_dist_m: min_dist_m
+  });
   $('poihint').textContent = r.message || ('Imported ' + r.placed + ' Objects.');
   load();
 }
+
+
 async function saveEv(){
   await post('/api/save',{event_name:$('ev-name').value,spawn_density:+$('ev-density').value,
     species_mode:$('ev-mode').value,
@@ -694,10 +713,27 @@ load(); loadNoms(); setInterval(load, 15000); setInterval(loadNoms, 20000);
 </script></body></html>"""
 
 
-def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit: int = 10000, gym_chance: float = 0.0) -> int:
+def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit: int = 10000, gym_chance: float = 0.0, min_dist_m: float = 50.0) -> int:
     """Broadly queries OpenStreetMap via Overpass API for nodes, ways, and relations,
     extracting features (parks, art, transport, amenities) and photos.
     """
+    import math
+
+    def haversine_distance(lat1, lon1, lat2, lon2):
+        """Calculate the great-circle distance between two points on the Earth."""
+        R = 6371000  # Radius of Earth in meters
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+
+        a = math.sin(delta_phi / 2)**2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2)**2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+
+    # Existing POI locations tracking
+    existing_locations = [(f.get("lat"), f.get("lng")) for f in PL.get()["forts"]]
+    
     query = f"""
     [out:json][timeout:90];
     (
@@ -755,6 +791,10 @@ def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit:
         if n_lat is None or n_lng is None:
             continue
 
+        # Check minimum distance condition
+        if any(haversine_distance(n_lat, n_lng, elat, elng) < min_dist_m for elat, elng in existing_locations):
+            continue
+
         # Extract name or synthesize a recognizable tag description if no name is specified
         name = tags.get("name")
         if not name:
@@ -780,6 +820,7 @@ def fetch_overpass_pois(lat: float, lng: float, radius_m: float = 3000.0, limit:
         
         PL.add_fort(n_lat, n_lng, kind, name, image)
         placed += 1
+        existing_locations.append((n_lat, n_lng))
 
     return placed
 
