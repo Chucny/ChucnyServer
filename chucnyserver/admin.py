@@ -340,7 +340,6 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
       <button id="b-stop" class="on" onclick="setMode('stop')">PokeStop</button>
       <button id="b-gym" onclick="setMode('gym')">Gym</button>
       <button id="b-mon" onclick="setMode('mon')">Pokemon</button>
-      <button id="b-teleport" onclick="setMode('teleport')">Teleport Trainer</button>
       <select id="species"></select>
       <input id="pname" placeholder="Name (optional)" size="14">
       <input id="pimg" placeholder="Photo path/URL" size="18">
@@ -350,7 +349,7 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
     </div>
 
     <div id="map"></div>
-    <div class="hint">Click the map to place the selected element. In Teleport Trainer mode, select a trainer below first.</div>
+    <div class="hint">Click anywhere on the map to place the selected element. Click existing markers to remove them.</div>
   </div>
 
   <div class="grid-2">
@@ -480,11 +479,11 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script>
-let mode='stop', map, layer, playerMarker, data={forts:[],spawns:[]};
+let mode='stop', map, layer, data={forts:[],spawns:[]};
 const $=i=>document.getElementById(i);
 const DEX=__DEX__;
 
-function setMode(m){mode=m;['stop','gym','mon','teleport'].forEach(k=>$('b-'+k).className=(k===m?'on':''));}
+function setMode(m){mode=m;['stop','gym','mon'].forEach(k=>$('b-'+k).className=(k===m?'on':''));}
 function icon(color,txt){return L.divIcon({className:'',html:
  `<div style="background:${color};border:2px solid #fff;border-radius:50%;width:26px;height:26px;
    display:flex;align-items:center;justify-content:center;font:700 11px sans-serif;color:#fff;
@@ -610,11 +609,7 @@ async function buy(kind){
 
 async function load(){
   const j=await (await fetch('/api/world')).json();
-  data=j.places;
-  const selected=$('giveuser').value.trim();
-  player=selected && j.teleports[selected]
-    ? {lat:j.teleports[selected][0],lng:j.teleports[selected][1]} : j.player;
-  $('cnt').textContent=data.forts.length+data.spawns.length;
+  data=j.places; player=j.player; $('cnt').textContent=data.forts.length+data.spawns.length;
   const ngym=data.forts.filter(f=>f.kind==='gym').length;
   const nstop=data.forts.length-ngym;
   $('warn').style.display=(ngym===0&&!data.procedural_forts)?'block':'none';
@@ -638,15 +633,14 @@ async function load(){
     $('presets').dataset.done='1';
   }
   if(!map){
-    map=L.map('map').setView([player.lat||39.19,player.lng||-96.58], player.lat?18:16);
+    map=L.map('map').setView([j.player.lat||39.19,j.player.lng||-96.58], j.player.lat?18:16);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,
       attribution:'&copy; OpenStreetMap'}).addTo(map);
     layer=L.layerGroup().addTo(map);
     map.on('click',e=>place(e.latlng.lat,e.latlng.lng));
+    if(j.player.lat) L.circleMarker([j.player.lat,j.player.lng],{radius:7,color:'#2563eb',
+      fillColor:'#3b82f6',fillOpacity:1}).addTo(map).bindTooltip('Trainer Position');
   }
-  if(playerMarker) playerMarker.remove();
-  if(player.lat||player.lng) playerMarker=L.circleMarker([player.lat,player.lng],{radius:7,color:'#2563eb',
-    fillColor:'#3b82f6',fillOpacity:1}).addTo(map).bindTooltip('Trainer Position');
   draw();
 }
 function draw(){
@@ -668,15 +662,6 @@ function draw(){
 async function post(u,b){return (await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},
   body:JSON.stringify(b||{})})).json();}
 async function place(lat,lng){
-  if(mode==='teleport'){
-    const player=$('giveuser').value.trim();
-    if(!player){alert('Select a trainer before teleporting.');return;}
-    const result=await post('/api/teleport',{player,lat,lng});
-    if(!result.ok){alert(result.message);return;}
-    $('givehint').textContent=`Teleported ${result.player} to ${lat.toFixed(5)}, ${lng.toFixed(5)}`;
-    $('givehint').style.color='var(--success)';
-    return load();
-  }
   const name=$('pname').value;
   if(mode==='mon') await post('/api/spawn',{lat,lng,pokemon_id:+$('species').value,name});
   else await post('/api/fort',{lat,lng,kind:mode,name,image:$('pimg').value});
@@ -833,7 +818,6 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"places": PL.get(), "config": EV.get(),
                                "presets": list(EV.PRESETS),
                                "storage": world.storage(),
-                               "teleports": rpc.teleports(),
                                "prices": {
                                    "pokemon_step": CFG.get("storage", "pokemon_upgrade_step"),
                                    "pokemon_cost": CFG.get("storage", "pokemon_upgrade_cost"),
@@ -862,22 +846,6 @@ class _Handler(BaseHTTPRequestHandler):
                     radius_m = 3000.0
                 count = fetch_overpass_pois(lat, lng, radius_m, limit, gym_chance)
                 return self._json({"placed": count, "message": f"Successfully imported {count} Objects."})
-            if p == "/api/teleport":
-                import math, rpc, world
-                player = (d.get("player") or "").strip()
-                try:
-                    lat = float(d["lat"])
-                    lng = float(d["lng"])
-                except (KeyError, TypeError, ValueError):
-                    return self._json(
-                        {"ok": False, "message": "latitude and longitude are required"}, 400)
-                if player not in world.account_names():
-                    return self._json({"ok": False, "message": "unknown trainer"}, 400)
-                if not (math.isfinite(lat) and math.isfinite(lng)
-                        and -90.0 <= lat <= 90.0 and -180.0 <= lng <= 180.0):
-                    return self._json({"ok": False, "message": "invalid coordinates"}, 400)
-                rpc.set_teleport(player, lat, lng)
-                return self._json({"ok": True, "player": player, "lat": lat, "lng": lng})
             if p == "/api/fort":
                 return self._json(PL.add_fort(d.get("lat"), d.get("lng"),
                                               d.get("kind", "stop"), d.get("name", ""),

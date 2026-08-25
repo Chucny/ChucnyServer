@@ -1,0 +1,45 @@
+{
+ "username": "player",
+ "bag": {
+  "1": 50,
+  "2": 20,
+  "101": 20,
+  "201": 10,
+  "701": 20
+ },
+ "caught": [],
+ "candy": {},
+ "stardust": 5000,
+ "xp": 0,
+ "level": 1,
+ "coins": 0,
+ "stats": {
+  "pokemons_encountered": 0,
+  "pokemons_captured": 0,
+  "poke_stop_visits": 0,
+  "pokeballs_thrown": 0,
+  "unique_pokedex_entries": 0,
+  "km_walked": 0.0
+ },
+ "claimed_levels": [],
+ "deleted": {},
+ "pokedex": {},
+ "team": 0,
+ "pw": "",
+ "applied": [],
+ "eggs": [],
+ "incubators": [
+  {
+   "id": "incubator-unlimited",
+   "item": 901,
+   "uses": -1,
+   "egg": 0,
+   "start_km": 0.0,
+   "target_km": 0.0
+  }
+ ],
+ "hatched": [],
+ "max_pokemon": 250,
+ "max_items": 350,
+ "pokestop_cooldowns": {}
+}

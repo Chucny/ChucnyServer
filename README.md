@@ -13,8 +13,9 @@
 4. Install the Pokemon GO 0.29.0 APK onto your phone (note: it's a 32-bit APK)
 5. Install the file **CA.crt** inside the **/chucnyserver/certs** folder as a **CA certificate** on your phone
 6. Go to your Wi-Fi settings and change your **DNS** to the IP shown in the server output
-7. Open the **Pokemon GO app** and tap on **Login with Google**
-8. You are now in!<br>
+7. Open the **Pokemon GO app** and tap on **Pokemon Trainer Club**
+8. Enter any username and password
+9. You are now in!<br>
 
 ### **⌨️ How to use the terminal manager**<br>
 Remember: The terminal manager is still full of bugs and is in Beta.<br>
