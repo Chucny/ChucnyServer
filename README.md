@@ -4,8 +4,8 @@
 <img src="screenshots/03_SCROT" style="width: 200px;"></img><img src="screenshots/02_SCROT" style="width: 200px;"></img>
 
 ### 📁 Overview
-**ChucnyServer** is an open source **MITM** (man in the middle) **0.29.0 Pokemon GO server** made in Python. <br>
-
+**ChucnyServer** is an open source **MITM** (man in the middle) **0.29.0 Pokemon GO server** made in Python. <br><br>
+<a href="https://chucny.github.io"><strong>The ChucnyServer website</strong></a><br><br>
 ### 🖥️ How to run
 1. Run the **DOWNLOAD.py** script inside /scripts. Alternatively, download the dependencies manually (recommended)
 2. Get the assets **(DM @chucny on discord to get them if you don't have them)**
