@@ -10,11 +10,7 @@ sleep(3)
 LIBRARIES = [
     "s2sphere", 
     "requests", 
-    "urllib3", 
-    "certifi", 
-    "PyQt6", 
-    "PyQt6-WebEngine", 
-    "pywebview"
+    "certifi"
 ]
 
 def run_command(command):
