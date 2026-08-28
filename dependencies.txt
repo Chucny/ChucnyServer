@@ -1,7 +1,3 @@
 s2sphere
 requests
-urllib3
 certifi
-PyQt6
-PyQt6-WebEngine
-pywebview
