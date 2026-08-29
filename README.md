@@ -42,7 +42,7 @@ Remember: The terminal manager is still full of bugs and is in Beta.<br>
 The reason I cannot provide you assets publicly, is because it violates **Copyright Laws**. Pokemon and trademarks are **Nintendo's and The Pokemon Company**'s **Intellectual Property** (IP). If this project had assets, it would get a **DCMA takedown**. By not distributing assets publicly, I can ensure that this project stays entirely legal.
 
 ### 🖼️ Credits
-- **@mobraxton5-ux** for making almost the playground
+- **@mobraxton5-ux** for making the playground
 - **maierfelix** for writing some of the logic that is still in this server
 - **OpenStreetMap** for POIs and more
 
