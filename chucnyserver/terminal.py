@@ -13,7 +13,7 @@ Commands use a slash-command syntax, for example:
     /raid on 150 3000 raid
     /help
 
-Remember this is full of bugs and doesn't work properly.
+PokeCoins/shop functionality is intentionally omitted.
 """
 
 from __future__ import annotations
@@ -107,7 +107,7 @@ def _trainer_location():
         import rpc
         return float(rpc._last_loc[0]), float(rpc._last_loc[1])
     except Exception:
-        return 0.0, 0.0
+        return None, None
 
 
 def fetch_overpass_pois(
@@ -474,7 +474,7 @@ Names containing spaces should be quoted, e.g. /place stop 60.17 24.94 "My Stop"
             f"Random Stops: {'ON' if places.get('procedural_forts') else 'OFF'} | "
             f"Random Pokemon: {'ON' if places.get('procedural_spawns') else 'OFF'}"
         )
-        self.println(f"Trainer position: {player['lat']:.6f}, {player['lng']:.6f}")
+        self.println("Trainer position: not available yet" if player["lat"] is None or player["lng"] is None else f"Trainer position: {player['lat']:.6f}, {player['lng']:.6f}")
         self.println(f"Event: {cfg.get('event_name')} | density={cfg.get('spawn_density')}")
         self.println(
             f"Species mode: {cfg.get('species_mode')} | list={cfg.get('species_list', [])} | "
@@ -558,8 +558,8 @@ Names containing spaces should be quoted, e.g. /place stop 60.17 24.94 "My Stop"
             idx = 2
         elif args and args[0].lower() == "trainer":
             idx = 1
-        if not lat:
-            raise ValueError("no trainer position is available")
+        if lat is None or lng is None:
+            raise ValueError("no real trainer position is available yet; connect and move the player first, or provide coordinates")
         count = _int(args[idx], "count") if len(args) > idx else 8
         radius = _float(args[idx + 1], "radius") if len(args) > idx + 1 else 60
         gym = True
@@ -579,8 +579,8 @@ Names containing spaces should be quoted, e.g. /place stop 60.17 24.94 "My Stop"
         radius_km = _float(args[idx], "radius-km") if len(args) > idx else 3
         limit = _int(args[idx + 1], "limit") if len(args) > idx + 1 else 5000
         gym_percent = _float(args[idx + 2], "gym-percent") if len(args) > idx + 2 else 15
-        if not lat or not lng:
-            raise ValueError("latitude and longitude are required (or a trainer position must be available)")
+        if lat is None or lng is None:
+            raise ValueError("latitude and longitude are required until a real trainer position has been received")
         if not 0.1 <= radius_km <= 50:
             raise ValueError("radius-km must be between 0.1 and 50")
         if not 100 <= limit <= 10000:
@@ -708,9 +708,8 @@ Names containing spaces should be quoted, e.g. /place stop 60.17 24.94 "My Stop"
 
     def run(self):
         self.running = True
-        self.println("\nChucnyServer Terminal Admin (Beta)")
+        self.println("\nChucnyServer Terminal Admin")
         self.println("Web admin functionality is available as slash commands.")
-        self.println("\n This is a Beta function. It is full of bugs and might not work as intended.")
         self.println("PokeCoins/shop functionality is disabled in this console.")
         self.println("Type /help for commands.\n")
         while self.running:
@@ -736,5 +735,85 @@ def start(prompt="admin> "):
     return thread, console
 
 
+
+
+# Standalone server launcher for terminal mode.
+import os, socket, time
+
+BASE = sys._MEIPASS if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+if BASE not in sys.path:
+    sys.path.insert(0, BASE)
+
+def detect_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+def _setup_logging():
+    path = os.path.join(os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else BASE, "server-log.txt")
+    logf = open(path, "a", encoding="utf-8", errors="replace", buffering=1)
+    class Tee:
+        encoding = "utf-8"
+        def __init__(self,*streams): self.streams=streams
+        def write(self,x):
+            x=str(x)
+            for s in self.streams:
+                try: s.write(x); s.flush()
+                except Exception: pass
+            return len(x)
+        def flush(self):
+            for s in self.streams:
+                try: s.flush()
+                except Exception: pass
+        def isatty(self):
+            try: return self.streams[0].isatty()
+            except Exception: return False
+    sys.stdout=Tee(sys.__stdout__,logf); sys.stderr=Tee(sys.__stderr__,logf)
+
+
+def print_logo():
+    print("""
+ ▗▄▄▖▗▖ ▗▖▗▖ ▗▖ ▗▄▄▖▗▖  ▗▖▗▖  ▗▖▗▄▄▖▗▄▄▄▖▗▄▄▖ ▗▖  ▗▖▗▄▄▄▖▗▄▄▖ 
+▐▌   ▐▌ ▐▌▐▌ ▐▌▐▌   ▐▛▚▖▐▌ ▝▚▞▘▐▌   ▐▌   ▐▌ ▐▌▐▌  ▐▌▐▌   ▐▌ ▐▌
+▐▌   ▐▛▀▜▌▐▌ ▐▌▐▌   ▐▌ ▝▜▌  ▐▌  ▝▀▚▖▐▛▀▀▘▐▛▀▚▖▐▌  ▐▌▐▛▀▀▘▐▛▀▚▖
+▝▚▄▄▖▐▌ ▐▌▝▚▄▞▘▝▚▄▄▖▐▌  ▐▌  ▐▌ ▗▄▄▞▘▐▙▄▄▖▐▌ ▐▌ ▝▚▞▘ ▐▙▄▄▖▐▌ ▐▌
+                                                              
+                                                              
+""");
+
+                  
+def main():
+    for name in ("stdout","stderr"):
+        try: getattr(sys,name).reconfigure(encoding="utf-8", errors="replace")
+        except Exception: pass
+    _setup_logging()
+    print_logo()
+    redirect_ip = sys.argv[1] if len(sys.argv)>1 else os.environ.get("RUN_IP") or detect_ip()
+    os.environ["REDIRECT_IP"]=redirect_ip
+    os.environ.setdefault("PORT","443"); os.environ.setdefault("BIND","0.0.0.0")
+    os.environ.setdefault("DNS_PORT","53"); os.environ.setdefault("CERT_DIR",os.path.join(BASE,"certs"))
+    os.environ.setdefault("SERVE_GAME_MASTER","1")
+    import server, dns_redirect
+    if not (os.path.exists(server.CERT) and os.path.exists(server.KEY)):
+        print(f"!! TLS certs not found in {os.environ['CERT_DIR']}."); return 1
+    print("\n[*] Booting ChucnyServer...")
+    start()
+    print(f"[+] Terminal mode active: https://{redirect_ip}:{os.environ['PORT']}")
+    print("[+] Server output is appended to server-log.txt")
+    def dns_loop():
+        while True:
+            try: dns_redirect.main()
+            except Exception as e:
+                print(f"[dns] restarting after: {e}"); time.sleep(1)
+    threading.Thread(target=dns_loop, daemon=True).start()
+    try: server.main()
+    except KeyboardInterrupt: print("\n[!] ChucnyServer stopped. Clean exit achieved.")
+    return 0
+
 if __name__ == "__main__":
-    serve()
+    raise SystemExit(main())
