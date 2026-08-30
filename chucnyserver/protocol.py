@@ -123,7 +123,8 @@ TUTORIAL_COMPLETE = [0, 1, 2, 3, 4, 5, 6, 7]
 # TeamColor: 0=NEUTRAL, 1=BLUE(Mystic), 2=RED(Valor), 3=YELLOW(Instinct).
 # Must be non-zero or the client refuses Gym interaction ("join a team first").
 def _team():
-    return _cfg.get("gyms", "team", env="TEAM", cast=int)
+    import world
+    return world.current().TEAM
 
 
 def build_player_avatar() -> bytes:
