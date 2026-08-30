@@ -19,8 +19,7 @@
 
 ### **⌨️ How to use the terminal manager**<br>
 Remember: The terminal manager is still full of bugs and is in Beta.<br>
-1. Run **__main__.py**<br>
-2. Then, run **terminal.py** in another terminal window
+Run **terminal.py** (don't run __main__.py)
 
 ### 📝 Features
 - **World Manager**: manage spawns, PokeStops, gyms, events and more.
