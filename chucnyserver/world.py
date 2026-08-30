@@ -1236,11 +1236,20 @@ def my_team():
 def set_team(team):
     """SetPlayerTeam."""
     p = current()
+    try:
+        team = int(team)
+    except (TypeError, ValueError):
+        return 3, p.TEAM
+    
+    if team not in (1, 2, 3):
+        return 3, p.TEAM
+    
     with _lock:
         if p.TEAM:
             return 2, p.TEAM
-        p.TEAM = max(1, min(3, int(team)))
+        p.TEAM = team
         out = p.TEAM
+    
     p.save()
     return 1, out
 
