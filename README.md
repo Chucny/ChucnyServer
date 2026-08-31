@@ -26,7 +26,7 @@
 1. Run **terminal.py** (do not run `__main__.py`).
 ---
 ## 🛠️ ChucnyServer Patcher – Linux Installation Guide
-This guide will help you set up your Linux environment and patch the **Pokémon GO 0.29-0.35 APK** to remove certificate pinning and allow it to connect to **ChucnyServer**. The patcher supports versions 0.29.0 all the way up to 0.35.0 without breaking the app or server.
+This guide will help you set up your Linux environment and patch the **Pokémon GO 0.29-0.36 APK** to remove certificate pinning and allow it to connect to **ChucnyServer**. The patcher supports versions 0.29.0 all the way up to 0.36.0 without breaking the app or server.
 
 ### 📋 Prerequisites
 To run the patcher interface and successfully re-pack the APK file, your system must have the following tools installed:
