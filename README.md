@@ -78,7 +78,7 @@ With all dependencies installed, you can proceed to modify your game client usin
 2. Click on the **"Select APK File"** button (or simply drag and drop your downloaded Pokémon GO 0.29.0 APK into the designated area).
 3. Click the **"Start Patching Process"** button.
 4. The interface will interact with your system utilities (`java`, `node`, `apk-mitm`) to decompile, inject network security overrides, and re-sign the package.
-5. Save the output file, usually generated as `apk-name-patched.apk`.
+5. Save the output file, usually generated as `app-name-patched.apk`.
 
 #### Option B: Using the Terminal Directly
 If you prefer bypassing the web UI and running the process manually:
