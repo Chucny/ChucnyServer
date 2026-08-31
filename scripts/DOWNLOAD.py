@@ -10,7 +10,9 @@ sleep(3)
 LIBRARIES = [
     "s2sphere", 
     "requests", 
-    "certifi"
+    "certifi",
+    "threading",
+    "customtkinter"
 ]
 
 def run_command(command):
