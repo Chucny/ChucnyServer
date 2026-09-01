@@ -1,5 +1,21 @@
+PYTHON LIBRARIES:
 s2sphere
 requests
 certifi
 customtkinter
 threading
+mariadb
+pathlib
+
+
+PATCHER:
+- Java installed
+- Node.js
+- npx
+- npm
+
+apk-mitm (installed via npm, npm install apk-mitm)
+
+
+DATABASE:
+- MariaDB installed
