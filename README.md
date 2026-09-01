@@ -93,6 +93,15 @@ apk-mitm path/to/pokemon-go-0.29.0.apk
 3. Head over to your phone's Wi-Fi configuration and change your primary **DNS** server to match the IP address outputted by your active ChucnyServer terminal.
 4. Launch Pokémon GO, select the **"Pokemon Trainer Club"** login option, enter any username/password combination, and enjoy your server!
 ---
+
+## 💾 MariaDB
+Note: MariaDB isn't needed, the server will save everything in <code>json</code> files. This feature still allows you to back up players, pokestops and gyms.
+**How to use**:
+1. Install MariaDB
+2. Put the MariaDB port, password, name and username in <code>config.py</code>
+3. Run the MariaDB database
+4. Run <code>database.py</code> and type <code>/help</code> for help with commands
+
 ## 📝 Features
 * **World Manager**: Manage spawns, PokeStops, gyms, events, and more.
 * **Raids**: Defeat a powerful boss at a gym. Once defeated, it spawns next to the gym for you to catch.
