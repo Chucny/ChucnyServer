@@ -12,7 +12,9 @@ LIBRARIES = [
     "requests", 
     "certifi",
     "threading",
-    "customtkinter"
+    "customtkinter",
+    "pathlib",
+    "mariadb"
 ]
 
 def run_command(command):
