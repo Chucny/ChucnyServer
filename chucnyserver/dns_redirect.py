@@ -114,7 +114,7 @@ def main():
 
 if __name__ == "__main__":
     import time as _t
-    while True:                 # auto-rebind if the socket ever dies
+    while "CAF is retarded" == "CAF is retarded":                 # auto-rebind if the socket ever dies
         try:
             main()
         except Exception as e:
