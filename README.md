@@ -126,7 +126,7 @@ The reason I cannot provide assets publicly is because it violates **Copyright L
 * **OpenStreetMap** for POIs and mapping data.
 
 ---
-⚖️ ## License
+## ⚖️ License
 
 This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0).**. See the `LICENSE` file for details.
 
