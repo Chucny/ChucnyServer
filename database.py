@@ -192,6 +192,10 @@ def restore_all():
     # =========================
 
     for file_name in ["gyms.json", "settings.json", "places.json"]:
+        
+        # fix: den här grejen tog sönder restore_all förrs gången /chucnyserver/gyms.json)
+        # så jag ska göra i str(BASE_DIR / file_path) -formen
+        full_db_path = str(BASE_DIR / file_name)
 
         cursor.execute(
             """
@@ -199,13 +203,13 @@ def restore_all():
             FROM files
             WHERE path = ?
             """,
-            (file_name,)
+            (full_db_path,)
         )
 
         document = cursor.fetchone()
 
         if document is None:
-            print(f"{file_name} was not found in the database.")
+            print(f"{file_name} was not found in the database (tried path: {full_db_path}).")
             continue
 
         content = document[0]
