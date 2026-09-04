@@ -74,7 +74,7 @@ sudo npm install -g apk-mitm
 With all dependencies installed, you can proceed to modify your game client using either the graphical interface or the command line.
 
 #### Option A: Using the ChucnyServer Patcher (UI)
-1. Open the `/patcher/patcher.py` file in your preferred web browser.
+1. Open the `/patcher/patcher.py` file
 2. Click on the **"Select APK File"** button (or simply drag and drop your downloaded Pokémon GO 0.29.0 APK into the designated area).
 3. Click the **"Start Patching Process"** button.
 4. The interface will interact with your system utilities (`java`, `node`, `apk-mitm`) to decompile, inject network security overrides, and re-sign the package.
