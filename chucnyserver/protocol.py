@@ -12,6 +12,10 @@ import time
 import pb
 import settings as _cfg
 
+
+INCENSE_CHANCE = 0.05
+LUCKY_EGG_CHANCE = 0.05
+
 # ----------------------------------------------------------- RequestEnvelope
 # (request side — VERIFIED against the real 0.29 client's raw envelope dump:
 #  #1 status_code, #3 request_id, #4 requests, #6 signature(ignored),
@@ -211,6 +215,10 @@ ITEM_POTION = 101
 ITEM_REVIVE = 201
 ITEM_ULTRA_BALL = 3
 ITEM_RAZZ_BERRY = 701
+
+# new! two new items added
+ITEM_LUCKY_EGG = 301
+ITEM_INCENSE_ORDINARY = 401
 
 
 def build_player_stats(level=None, xp=None) -> bytes:
@@ -2127,6 +2135,7 @@ def build_fort_search_response(fort_id, now_ms) -> bytes:
         (ITEM_POTION, rnd.randint(1, 2)),
         (ITEM_REVIVE, 1),
     ]
+
     if rnd.random() < _cfg.get("pokestops", "great_ball_chance", cast=float):
         awards.append((ITEM_GREAT_BALL, rnd.randint(1, 2)))
     if rnd.random() < _cfg.get("pokestops", "ultra_ball_chance", cast=float):
@@ -2134,8 +2143,18 @@ def build_fort_search_response(fort_id, now_ms) -> bytes:
     if rnd.random() < _cfg.get("pokestops", "razz_berry_chance", cast=float):
         awards.append((ITEM_RAZZ_BERRY, rnd.randint(1, 2)))
 
+    # Rare consumable drops.
+    # FIX RANDOM CHANCE
+    if rnd.random() < LUCKY_EGG_CHANCE:
+        awards.append((ITEM_LUCKY_EGG, 1))
+    if rnd.random() < INCENSE_CHANCE:
+        awards.append((ITEM_INCENSE_ORDINARY, 1))
+
     other = sum(c for _i, c in awards)
-    awards.insert(0, (ITEM_POKE_BALL, max(rnd.randint(1, 3), _lo - other)))
+    awards.insert(0, (
+        ITEM_POKE_BALL,
+        max(rnd.randint(1, 3), _lo - other)
+    ))
 
     total = sum(c for _i, c in awards)
     for i in range(len(awards) - 1, -1, -1):
@@ -2147,7 +2166,8 @@ def build_fort_search_response(fort_id, now_ms) -> bytes:
             awards[i] = (iid, cnt - take)
             total -= take
 
-    # Re-check bag capacity and reserve the cooldown under the same lock.
+    awards = [(iid, cnt) for iid, cnt in awards if cnt > 0]
+
     with world._lock:
         room = world.room_in_bag()
         if room <= 0:
