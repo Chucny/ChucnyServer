@@ -7,14 +7,23 @@ client's logged layout (see rpc.py request dumps) ever disagrees, it's a
 one-line fix. The request side is parsed generically (pb.decode), so only the
 RESPONSE builders below depend on these numbers being right.
 """
+
+
+# 6.3.2
+
 import os
 import time
 import pb
 import settings as _cfg
-
+import hackermode
 
 INCENSE_CHANCE = 0.05
 LUCKY_EGG_CHANCE = 0.05
+LURE_MODULE_CHANCE = 0.04
+
+
+
+
 
 # ----------------------------------------------------------- RequestEnvelope
 # (request side — VERIFIED against the real 0.29 client's raw envelope dump:
@@ -215,10 +224,50 @@ ITEM_POTION = 101
 ITEM_REVIVE = 201
 ITEM_ULTRA_BALL = 3
 ITEM_RAZZ_BERRY = 701
+ITEM_MASTER_BALL = 4
 
 # new! two new items added
 ITEM_LUCKY_EGG = 301
 ITEM_INCENSE_ORDINARY = 401
+
+# Berries
+ITEM_NANAB_BERRY = 703
+ITEM_WEPAR_BERRY = 704
+ITEM_PINAP_BERRY = 705
+
+# Lures
+ITEM_TROY_DISK = 501
+
+
+unreleased_items = [ITEM_NANAB_BERRY, ITEM_WEPAR_BERRY, ITEM_PINAP_BERRY, ITEM_MASTER_BALL, 801, 1001, 1002] # 801 is the camera, and 1001 and 1002 are storage&item bag upgrades!
+
+
+LOOT_TABLE = {
+    ITEM_POKE_BALL:        {"name": "Poke Ball",    "chance": 100, "min": 1, "max": 3},
+    ITEM_GREAT_BALL:       {"name": "Great Ball",   "chance": 25,  "min": 1, "max": 2},
+    ITEM_ULTRA_BALL:       {"name": "Ultra Ball",   "chance": 10,  "min": 1, "max": 1},
+    ITEM_MASTER_BALL:      {"name": "Master Ball",  "chance": 0,   "min": 1, "max": 1},
+    ITEM_POTION:           {"name": "Potion",       "chance": 100, "min": 1, "max": 2},
+    ITEM_REVIVE:           {"name": "Revive",       "chance": 100, "min": 1, "max": 1},
+    ITEM_RAZZ_BERRY:       {"name": "Razz Berry",   "chance": 20,  "min": 1, "max": 2},
+    ITEM_NANAB_BERRY:      {"name": "Nanab Berry",  "chance": 0,   "min": 1, "max": 2},
+    ITEM_WEPAR_BERRY:      {"name": "Wepear Berry", "chance": 0,   "min": 1, "max": 2},
+    ITEM_PINAP_BERRY:      {"name": "Pinap Berry",  "chance": 0,   "min": 1, "max": 2},
+    ITEM_LUCKY_EGG:        {"name": "Lucky Egg",    "chance": 5,   "min": 1, "max": 1},
+    ITEM_INCENSE_ORDINARY: {"name": "Incense",      "chance": 5,   "min": 1, "max": 1},
+    ITEM_TROY_DISK:        {"name": "Lure Module",  "chance": 4,   "min": 1, "max": 1},
+}
+
+
+LOOT_MIN_ITEMS = 3
+LOOT_MAX_ITEMS = 10
+
+
+
+
+
+
+
 
 
 def build_player_stats(level=None, xp=None) -> bytes:
@@ -1026,7 +1075,7 @@ def catch_chance(pokemon_id, cp, ball_id, reticle, berry_mult):
     base = _cfg.get("catching", "base_catch_rate", cast=float)
     # a 2000 CP Pokemon should be a real fight; a 100 CP one shouldn't
     base *= max(0.18, 1.0 - (max(0, int(cp)) / 3200.0))
-    base *= {1: 1.0, 2: 1.5, 3: 2.0}.get(int(ball_id), 1.0)      # poke/great/ultra
+    base *= {1: 1.0, 2: 1.5, 3: 2.0, 4: 999999}.get(int(ball_id), 1.0)      # poke/great/ultra
     base *= 1.0 + max(0.0, min(1.0, float(reticle))) * 0.55      # aim helps
     base *= max(1.0, float(berry_mult))
     return max(0.05, min(0.95, base))
@@ -2128,27 +2177,74 @@ def build_fort_search_response(fort_id, now_ms) -> bytes:
             return pb.Writer().uint(1, 4).to_bytes()  # INVENTORY_FULL
 
     rnd = _random.Random(hash(fid) ^ (now_ms // 300000))
-    _lo = _cfg.get("pokestops", "min_items_per_spin", cast=int)
-    _hi = max(_lo, _cfg.get("pokestops", "max_items_per_spin", cast=int))
+    
 
-    awards = [
-        (ITEM_POTION, rnd.randint(1, 2)),
-        (ITEM_REVIVE, 1),
-    ]
+    _lo = int(LOOT_MIN_ITEMS)
+    _hi = max(_lo, int(LOOT_MAX_ITEMS))
+    
+    awards = []
+    
+    for iid, rule in LOOT_TABLE.items():
+        if rnd.random() * 100 < float(rule["chance"]):
+            item_min = max(1, int(rule["min"]))
+            item_max = max(item_min, int(rule["max"]))
+            awards.append((iid, rnd.randint(item_min, item_max)))
 
-    if rnd.random() < _cfg.get("pokestops", "great_ball_chance", cast=float):
-        awards.append((ITEM_GREAT_BALL, rnd.randint(1, 2)))
-    if rnd.random() < _cfg.get("pokestops", "ultra_ball_chance", cast=float):
-        awards.append((ITEM_ULTRA_BALL, 1))
-    if rnd.random() < _cfg.get("pokestops", "razz_berry_chance", cast=float):
-        awards.append((ITEM_RAZZ_BERRY, rnd.randint(1, 2)))
+    if hackermode.get_hackermode():
+        for iid in unreleased_items:
+            awards.append((iid, rnd.randint(1, 2)))
 
-    # Rare consumable drops.
-    # FIX RANDOM CHANCE
-    if rnd.random() < LUCKY_EGG_CHANCE:
-        awards.append((ITEM_LUCKY_EGG, 1))
-    if rnd.random() < INCENSE_CHANCE:
-        awards.append((ITEM_INCENSE_ORDINARY, 1))
+    # Trim down to the configured maximum.
+    while sum(cnt for _iid, cnt in awards) > _hi and awards:
+        index = rnd.randrange(len(awards))
+        iid, cnt = awards[index]
+    
+        if cnt > 1:
+            awards[index] = (iid, cnt - 1)
+        else:
+            awards.pop(index)
+
+    # Guarantee the configured minimum.
+    while sum(cnt for _iid, cnt in awards) < _lo:
+        eligible = [
+            (iid, rule)
+            for iid, rule in LOOT_TABLE.items()
+                if float(rule["chance"]) > 0
+        ]
+
+        if not eligible:
+            break
+
+        iid, rule = rnd.choice(eligible)
+        item_min = max(1, int(rule["min"]))
+        item_max = max(item_min, int(rule["max"]))
+
+        awards.append((iid, rnd.randint(item_min, item_max)))
+
+
+
+
+
+
+
+
+
+    
+    for iid, rule in LOOT_TABLE.items():
+        if rnd.random() * 100 < rule["chance"]:
+            awards.append((
+                iid,
+                rnd.randint(int(rule["min"]), int(rule["max"]))
+            ))
+
+
+    # random loop
+
+
+    if hackermode.get_hackermode():
+        for beetle in unreleased_items:
+            awards.append((beetle, rnd.randint(1, 2)))
+
 
     other = sum(c for _i, c in awards)
     awards.insert(0, (

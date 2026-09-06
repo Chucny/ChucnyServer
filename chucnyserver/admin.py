@@ -477,6 +477,16 @@ PAGE = r"""<!doctype html><html><head><meta charset="utf-8">
     </div>
   </div>
 
+    <div class="card">
+      <div class="card-title">PokeStop Loot Table</div>
+      <div class="controls-row">
+        <label>Min <input id="loot-total-min" type="number" min="1" value="3"></label>
+        <label>Max <input id="loot-total-max" type="number" min="1" value="10"></label>
+        <button onclick="saveLoot()">Save Loot</button>
+      </div>
+      <div id="loot-table"></div>
+    </div>
+
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -709,7 +719,52 @@ post('/api/accounts',{}).then(r=>{(r.accounts||[]).forEach(n=>{
 DEX.forEach((n,i)=>{if(i){const o=document.createElement('option');o.value=i;
   o.textContent=i+' '+n;$('species').appendChild(o);}});
 $('species').value=0;
-load(); loadNoms(); setInterval(load, 15000); setInterval(loadNoms, 20000);
+
+function paintLoot(rules) {
+  var container = document.getElementById("loot-table");
+  if (!container) return;
+  var html = "";
+  Object.keys(rules || {}).forEach(function(id) {
+    var r = rules[id];
+    html += '<div class="controls-row">' +
+      '<strong style="width:130px">' + String(r.name || id) + '</strong>' +
+      ' Chance <input data-id="' + id + '" data-k="chance" type="number" min="0" max="100" value="' + Number(r.chance || 0) + '">' +
+      ' Min <input data-id="' + id + '" data-k="min" type="number" min="1" value="' + Number(r.min || 1) + '">' +
+      ' Max <input data-id="' + id + '" data-k="max" type="number" min="1" value="' + Number(r.max || 1) + '">' +
+      '</div>';
+  });
+  container.innerHTML = html;
+}
+
+function loadLoot() {
+  fetch("/api/loot").then(function(response) { return response.json(); }).then(function(r) {
+    var min = document.getElementById("loot-total-min");
+    var max = document.getElementById("loot-total-max");
+    if (min) min.value = r.min_items;
+    if (max) max.value = r.max_items;
+    paintLoot(r.rules);
+  }).catch(function() {});
+}
+
+function saveLoot() {
+  var rules = {};
+  var container = document.getElementById("loot-table");
+  var inputs = container ? container.getElementsByTagName("input") : [];
+  for (var i = 0; i < inputs.length; i++) {
+    var input = inputs[i];
+    var id = input.getAttribute("data-id");
+    var key = input.getAttribute("data-k");
+    if (!rules[id]) rules[id] = {};
+    rules[id][key] = Number(input.value);
+  }
+  post("/api/loot", {
+    min_items: Number(document.getElementById("loot-total-min").value),
+    max_items: Number(document.getElementById("loot-total-max").value),
+    rules: rules
+  }).then(function(r) { alert(r.ok ? "Loot table saved" : "Could not save loot table"); });
+}
+
+load(); loadNoms(); loadLoot(); setInterval(load, 15000); setInterval(loadNoms, 20000);
 </script></body></html>"""
 
 
@@ -865,7 +920,14 @@ class _Handler(BaseHTTPRequestHandler):
                                    "items_step": CFG.get("storage", "items_upgrade_step"),
                                    "items_cost": CFG.get("storage", "items_upgrade_cost")},
                                "player": {"lat": lat, "lng": lng}})
-        self._send(404, "text/plain", "not found")
+        if p == "/api/loot":
+            import protocol as P
+        
+            return self._json({
+                "rules": P.LOOT_TABLE,
+                "min_items": P.LOOT_MIN_ITEMS,
+                "max_items": P.LOOT_MAX_ITEMS,
+            })
 
     def do_POST(self):
         p = self.path.split("?")[0]
@@ -1027,6 +1089,56 @@ class _Handler(BaseHTTPRequestHandler):
                 ok, message, new = world.buy_storage(
                     "pokemon" if d.get("what") == "pokemon" else "items")
                 return self._json({"ok": ok, "message": message, "new": new})
+
+
+
+
+
+            if p == "/api/loot":
+                import protocol as P
+
+                P.LOOT_MIN_ITEMS = max(1, int(d.get("min_items", 3)))
+                P.LOOT_MAX_ITEMS = max(
+                    P.LOOT_MIN_ITEMS,
+                    int(d.get("max_items", 10))
+                )
+
+                for iid, values in d.get("rules", {}).items():
+                    iid = int(iid)
+
+                    if iid not in P.LOOT_TABLE:
+                        continue
+
+                    rule = P.LOOT_TABLE[iid]
+
+                    rule["chance"] = max(
+                        0,
+                        min(100, float(values.get("chance", rule["chance"])))
+                    )
+
+                    rule["min"] = max(
+                        1,
+                        int(values.get("min", rule["min"]))
+                    )
+
+                    rule["max"] = max(
+                    rule["min"],
+                        int(values.get("max", rule["max"]))
+                    )
+            
+                return self._json({"ok": True})
+
+
+
+
+
+
+
+
+
+
+
+
             if p == "/api/procedural":
                 return self._json(PL.set_procedural(d.get("on", True), d.get("what", "both")))
             if p == "/api/save":
