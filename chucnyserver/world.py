@@ -160,6 +160,7 @@ def _hash_pw(password, salt=None):
 class Player:
     def __init__(self, username):
         self.username = username
+        self.CODENAME = ""
         self.file = os.path.join(SAVES_DIR, _safe_name(username) + ".json")
         self.BAG = dict(_STARTING_BAG)
         self.CAUGHT = []
@@ -191,6 +192,13 @@ class Player:
         self.HATCHED = []        # hatched, not yet reported to the client
         self.LAST_POS = None     # (lat, lng) for the walked-distance tally
         self.TEAM = 0            # 0 = not chosen yet; set in game at level 5
+        # Onboarding state is persisted so reconnects resume at the same step.
+        # State 1 is the initial onboarding marker; 0 is never emitted.
+        self.TUTORIAL = [1]
+        self.AVATAR = {
+            "avatar": 0, "skin": 1, "hair": 1, "shirt": 1, "pants": 1,
+            "hat": 0, "shoes": 1, "eyes": 1, "backpack": 1,
+        }
         self.BERRIES = {}        # encounter_id -> capture multiplier in effect
         self.PW = ""             # "salt$hash"; empty until the account is claimed
         self.APPLIED = []        # active Lucky Egg / Incense
@@ -206,6 +214,7 @@ class Player:
     def snapshot(self):
         return {
             "username": self.username,
+            "codename": self.CODENAME,
             "bag": {str(k): v for k, v in self.BAG.items()},
             "caught": self.CAUGHT,
             "candy": {str(k): v for k, v in self.CANDY.items()},
@@ -218,6 +227,8 @@ class Player:
             "deleted": {str(k): v for k, v in self.DELETED.items()},
             "pokedex": {str(k): list(v) for k, v in self.POKEDEX.items()},
             "team": self.TEAM,
+            "tutorial": list(self.TUTORIAL),
+            "avatar": dict(self.AVATAR),
             "pw": self.PW,
             "applied": self.APPLIED,
             "eggs": self.EGGS,
@@ -304,6 +315,23 @@ class Player:
                 pass
 
         self.TEAM = int(d.get("team", 0) or 0)
+        self.CODENAME = str(d.get("codename", "") or "").strip()[:32]
+        # Backward compatible: existing saves were treated as fully onboarded.
+        # Only brand-new XP=0/no-Pokemon accounts enter onboarding.
+        raw_tutorial = d.get("tutorial")
+        if isinstance(raw_tutorial, list):
+            self.TUTORIAL = sorted({int(x) for x in raw_tutorial
+                                    if str(x).lstrip("-").isdigit() and 1 <= int(x) <= 7}) or [1]
+        else:
+            self.TUTORIAL = [1] if int(d.get("xp", 0) or 0) == 0 and not self.CAUGHT else [1, 2, 3, 4, 5, 6, 7]
+        raw_avatar = d.get("avatar")
+        if isinstance(raw_avatar, dict):
+            for k in self.AVATAR:
+                if k in raw_avatar:
+                    try:
+                        self.AVATAR[k] = int(raw_avatar[k])
+                    except (TypeError, ValueError):
+                        pass
         self.PW = str(d.get("pw", "") or "")
         self.APPLIED = [a for a in (d.get("applied") or []) if isinstance(a, dict)]
         self.EGGS = [e for e in (d.get("eggs") or []) if isinstance(e, dict)]
@@ -381,6 +409,7 @@ def accounts():
                 out.append(
                     {
                         "username": d.get("username", fn[:-5]),
+                        "codename": d.get("codename", ""),
                         "level": level_for_xp(int(d.get("xp", 0) or 0)),
                         "xp": int(d.get("xp", 0) or 0),
                         "caught": len(d.get("caught") or []),
@@ -468,6 +497,63 @@ def has_password(username):
         return bool(use(real).PW)
     finally:
         _current.player = prev
+
+
+# ==============================================================================
+# Onboarding state
+# ==============================================================================
+
+def codename():
+    return str(getattr(current(), "CODENAME", "") or "")
+
+
+def set_codename(name):
+    p = current()
+    name = str(name or "").strip()[:32]
+    with _lock:
+        p.CODENAME = name
+    p.save()
+    return name
+
+
+def tutorial_state():
+    """Return the completed onboarding steps, never including state 0."""
+    with _lock:
+        vals = sorted({int(x) for x in current().TUTORIAL if 1 <= int(x) <= 7})
+        if not vals:
+            current().TUTORIAL = [1]
+            return [1]
+        return vals
+
+
+def is_onboarding():
+    p = current()
+    return p.XP == 0 and not p.CAUGHT and tutorial_state() != [1, 2, 3, 4, 5, 6, 7]
+
+
+def advance_tutorial(*states):
+    p = current()
+    with _lock:
+        cur = {int(x) for x in p.TUTORIAL if 1 <= int(x) <= 7}
+        cur.update(int(x) for x in states if 1 <= int(x) <= 7)
+        p.TUTORIAL = sorted(cur)
+    p.save()
+    return list(p.TUTORIAL)
+
+
+def avatar():
+    with _lock:
+        return dict(current().AVATAR)
+
+
+def set_avatar(values):
+    p = current()
+    with _lock:
+        for key in p.AVATAR:
+            if key in values:
+                p.AVATAR[key] = int(values[key])
+    p.save()
+    return avatar()
 
 
 # ==============================================================================

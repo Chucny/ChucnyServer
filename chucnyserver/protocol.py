@@ -100,13 +100,17 @@ class RT:
     USE_INCENSE = 141
     GET_INCENSE_POKEMON = 142
     ADD_FORT_MODIFIER = 144
+    SET_AVATAR = 404
     SET_PLAYER_TEAM = 405
+    MARK_TUTORIAL_COMPLETE = 406
     USE_ITEM_REVIVE = 116
     RECYCLE_INVENTORY_ITEM = 137
     GET_MAP_OBJECTS = 106
     GET_PLAYER_PROFILE = 121
+    ENCOUNTER_TUTORIAL_COMPLETE = 127
     GET_ASSET_DIGEST = 300
     GET_DOWNLOAD_URLS = 301
+    CLAIM_CODENAME = 403
 
 NAME = {v: k for k, v in vars(RT).items() if not k.startswith("_")}
 def rt_name(n): return NAME.get(n, f"UNKNOWN_{n}")
@@ -129,9 +133,14 @@ PD_CURRENCIES = 14
 GP_SUCCESS = 1
 GP_PLAYER_DATA = 2
 
-# Mark the whole new-user tutorial as already finished so the client skips
-# straight to the map. Extra/unknown enum values are ignored by the client.
-TUTORIAL_COMPLETE = [0, 1, 2, 3, 4, 5, 6, 7]
+# TutorialCompletion values from the 0.29 POGOProtos era:
+# 0=LEGAL_SCREEN, 1=AVATAR_SELECTION, 2=ACCOUNT_CREATION,
+# 3=POKEMON_CAPTURE, ... 7=FIRST_TIME_EXPERIENCE_COMPLETE.
+#
+# New accounts must NOT be marked fully complete: doing so skips the onboarding
+# UI. We intentionally begin at 1 (never 0) and advance it as the player acts.
+TUTORIAL_START = [1]
+TUTORIAL_COMPLETE = [1, 2, 3, 4, 5, 6, 7]
 
 # TeamColor: 0=NEUTRAL, 1=BLUE(Mystic), 2=RED(Valor), 3=YELLOW(Instinct).
 # Must be non-zero or the client refuses Gym interaction ("join a team first").
@@ -141,17 +150,21 @@ def _team():
 
 
 def build_player_avatar() -> bytes:
-    # Minimal cosmetic avatar; numbers are non-critical (purely visual).
+    # PlayerAvatarProto fields. Keep the defaults compatible with the old
+    # response, but source them from the per-player saved avatar so SetAvatar
+    # survives reconnects.
+    import world
+    a = world.avatar()
     return (pb.Writer()
-            .uint(2, 1)   # skin
-            .uint(3, 1)   # hair
-            .uint(4, 1)   # shirt
-            .uint(5, 1)   # pants
-            .uint(6, 0)   # hat
-            .uint(7, 1)   # shoes
-            .uint(8, 0)   # gender (0=male)
-            .uint(9, 1)   # eyes
-            .uint(10, 1)  # backpack
+            .uint(2, int(a.get("skin", 1)))
+            .uint(3, int(a.get("hair", 1)))
+            .uint(4, int(a.get("shirt", 1)))
+            .uint(5, int(a.get("pants", 1)))
+            .uint(6, int(a.get("hat", 0)))
+            .uint(7, int(a.get("shoes", 1)))
+            .uint(8, int(a.get("avatar", 0)))
+            .uint(9, int(a.get("eyes", 1)))
+            .uint(10, int(a.get("backpack", 1)))
             .to_bytes())
 
 
@@ -189,11 +202,14 @@ def _storage():
 
 
 def build_player_data(username: str) -> bytes:
+    import world
+    p = world.current()
+    tutorial = world.tutorial_state()
     w = (pb.Writer()
          .uint(PD_CREATION_MS, int(time.time() * 1000) - 86_400_000)
-         .string(PD_USERNAME, username)
-         .uint(PD_TEAM, _team())                     # non-zero so Gyms are usable
-         .packed_varints(PD_TUTORIAL, TUTORIAL_COMPLETE)
+         .string(PD_USERNAME, (p.CODENAME or username))
+         .uint(PD_TEAM, _team())
+         .packed_varints(PD_TUTORIAL, tutorial)
          .message(PD_AVATAR, build_player_avatar())
          .uint(PD_MAX_POKEMON, _storage()[0])
          .uint(PD_MAX_ITEMS, _storage()[1])
@@ -1050,6 +1066,127 @@ def build_use_item_capture_response(item_id, encounter_id) -> bytes:
             .to_bytes())
 
 
+def parse_claim_codename(msg: bytes):
+    f = pb.decode(msg)
+    raw = pb.get(f, 1, pb.WT_LEN) or b""
+    name = raw.decode("utf-8", "replace").strip() if isinstance(raw, bytes) else str(raw).strip()
+    force = bool(pb.get(f, 2, pb.WT_VARINT))
+    return name, force
+
+
+def build_claim_codename_response(username, name, force=False) -> bytes:
+    """CodenameResultProto: validate/store the trainer name and finish step 4."""
+    import world
+    name = str(name or "").strip()
+    valid = 3 <= len(name) <= 12 and all(c.isalnum() or c in " _-" for c in name)
+    # Codename is the player-visible trainer name; the login identity remains username.
+    if not valid:
+        return (pb.Writer()
+                .string(2, "That name is not available. Please try another name.")
+                .bool_(3, False)
+                .uint(4, 3)
+                .message(5, build_player_data(username))
+                .to_bytes())
+
+    folded = name.casefold()
+    for account in world.accounts():
+        existing = str(account.get("codename", "") or "").strip()
+        if existing.casefold() == folded and existing.casefold() != world.codename().casefold():
+            return (pb.Writer()
+                    .string(1, name)
+                    .string(2, "That name is already taken. Please try another name.")
+                    .bool_(3, False)
+                    .uint(4, 2)
+                    .message(5, build_player_data(username))
+                    .to_bytes())
+
+    world.set_codename(name)
+    world.advance_tutorial(4)
+    return (pb.Writer()
+            .string(1, name)
+            .bool_(3, True)
+            .uint(4, 1)
+            .message(5, build_player_data(username))
+            .to_bytes())
+
+
+def parse_set_avatar(msg: bytes):
+    """SetAvatarProto { player_avatar_proto=2 PlayerAvatarProto }."""
+    f = pb.decode(msg)
+    raw = pb.get(f, 2, pb.WT_LEN)
+    if not isinstance(raw, bytes):
+        return None
+    a = pb.decode(raw)
+    # Numeric PlayerAvatarProto fields; string fields are intentionally ignored
+    # because the 0.29 client uses the numeric selections during onboarding.
+    fields = {
+        "avatar": 8, "skin": 2, "hair": 3, "shirt": 4, "pants": 5,
+        "hat": 6, "shoes": 7, "eyes": 9, "backpack": 10,
+    }
+    out = {}
+    for name, number in fields.items():
+        value = pb.get(a, number, pb.WT_VARINT)
+        if value is not None:
+            out[name] = int(value)
+    return out
+
+
+def build_set_avatar_response(username, avatar) -> bytes:
+    """SetAvatarOutProto { status=1, player=2 }.
+
+    A successful avatar selection also records tutorial step 1 as complete;
+    the server then exposes step 2 without ever emitting tutorial state 0.
+    """
+    import world
+    if not avatar:
+        return pb.Writer().uint(1, 3).to_bytes()  # FAILURE
+    world.set_avatar(avatar)
+    world.advance_tutorial(2)
+    return (pb.Writer()
+            .uint(1, 1)  # SUCCESS
+            .message(2, build_player_data(username))
+            .to_bytes())
+
+
+def parse_mark_tutorial_complete(msg: bytes):
+    """MarkTutorialCompleteProto { tutorial_complete=1 repeated enum }."""
+    f = pb.decode(msg)
+    values = []
+    for raw in pb.get_all(f, 1):
+        if isinstance(raw, bytes):
+            # packed repeated enum
+            i = 0
+            while i < len(raw):
+                value, shift = 0, 0
+                while True:
+                    if i >= len(raw):
+                        break
+                    b = raw[i]
+                    i += 1
+                    value |= (b & 0x7f) << shift
+                    if not b & 0x80:
+                        values.append(value)
+                        break
+                    shift += 7
+                    if shift > 35:
+                        break
+        else:
+            values.append(int(raw))
+    return values
+
+
+def build_mark_tutorial_complete_response(username, values) -> bytes:
+    import world
+    # Never accept/emit 0 as an onboarding state. State 1 is the floor.
+    clean = sorted({int(v) for v in values if 1 <= int(v) <= 7})
+    if clean:
+        world.advance_tutorial(*clean)
+    return (pb.Writer()
+            .bool_(1, True)
+            .message(2, build_player_data(username))
+            .to_bytes())
+
+
 def parse_set_player_team(msg):
     """SetPlayerTeamProto { team=1 }. 1=Mystic(blue) 2=Valor(red) 3=Instinct(yellow)."""
     return pb.get(pb.decode(msg), 1, pb.WT_VARINT) or 0
@@ -1483,11 +1620,55 @@ def build_catch_pokemon_response(encounter_id, pokeball, hit, now_ms,
     world.add_candy(pokemon_family(s["pokemon_id"]),
                     _cfg.get("catching", "candy_per_catch", cast=int))
     world.add_stardust(_cfg.get("catching", "stardust_per_catch", cast=int))
+    # First successful catch completes the onboarding capture step. The normal
+    # catch path remains unchanged for established players.
+    if 3 not in world.tutorial_state():
+        world.advance_tutorial(3)
     return (pb.Writer()
             .uint(1, 1)                                   # CATCH_SUCCESS
             .double(2, 0.0)                               # miss_percent
             .uint(3, uid)                                 # captured_pokemon_id
             .message(4, award)                            # capture_award
+            .to_bytes())
+
+
+def build_encounter_tutorial_complete_response(pokemon_id) -> bytes:
+    """EncounterTutorialCompleteOutProto for the first onboarding Pokemon.
+
+    The 0.29 client uses request 127 for the scripted first-catch flow rather
+    than the ordinary wild-catch RPC. The selected starter is persisted through
+    the same world collection used by the normal inventory path.
+    """
+    import world
+    pokemon_id = int(pokemon_id or 0)
+    if pokemon_id not in (1, 4, 7):
+        return pb.Writer().uint(1, 2).to_bytes()  # ERROR_INVALID_POKEMON
+    if world.caught():
+        # Do not mint a second starter if the client retries the tutorial call.
+        existing = world.caught()[0]
+        return (pb.Writer()
+                .uint(1, 1)
+                .message(2, build_pokemon_data(existing["pokemon_id"],
+                                               existing["uid"], existing["cp"]))
+                .message(3, build_capture_award()[0])
+                .to_bytes())
+
+    # Keep the scripted starter modest and deterministic.
+    uid = world.new_uid(0x544F4E4554 ^ pokemon_id)
+    cp = 100
+    world.add_caught(uid, pokemon_id, cp)
+    world.pokedex_caught(pokemon_id)
+    world.add_candy(pokemon_family(pokemon_id),
+                    _cfg.get("catching", "candy_per_catch", cast=int))
+    world.add_stardust(_cfg.get("catching", "stardust_per_catch", cast=int))
+    xp = _cfg.get("catching", "xp_per_catch", cast=int)
+    world.add_xp(xp)
+    world.advance_tutorial(3)
+    award, _ = build_capture_award()
+    return (pb.Writer()
+            .uint(1, 1)
+            .message(2, build_pokemon_data(pokemon_id, uid, cp))
+            .message(3, award)
             .to_bytes())
 
 

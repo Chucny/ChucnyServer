@@ -191,6 +191,44 @@ def _build_returns(reqs, username, log):
             log(f"      -> SET_PLAYER_TEAM -> " +
                 (f"joined {names.get(team, team)}" if st == 1 else
                  "team was already chosen" if st == 2 else "failed"))
+        elif rtype == P.RT.CLAIM_CODENAME:
+            name, force = P.parse_claim_codename(msg)
+            r = P.build_claim_codename_response(username, name, force)
+            returns.append(r)
+            d = pb.decode(r)
+            st = pb.get(d, 4, pb.WT_VARINT) or 0
+            log(f"      -> CLAIM_CODENAME {name!r} -> " +
+                ({1: "accepted; tutorial advanced to step 5",
+                  2: "name already taken",
+                  3: "name rejected"}.get(st, f"status {st}")))
+
+        elif rtype == P.RT.SET_AVATAR:
+            avatar = P.parse_set_avatar(msg)
+            r = P.build_set_avatar_response(username, avatar)
+            returns.append(r)
+            st = pb.get(pb.decode(r), 1, pb.WT_VARINT)
+            log(f"      -> SET_AVATAR -> " +
+                ("saved avatar; tutorial advanced to account creation"
+                 if st == 1 else "failed"))
+
+        elif rtype == P.RT.MARK_TUTORIAL_COMPLETE:
+            completed = P.parse_mark_tutorial_complete(msg)
+            r = P.build_mark_tutorial_complete_response(username, completed)
+            returns.append(r)
+            import world
+            log(f"      -> MARK_TUTORIAL_COMPLETE {completed!r} -> "
+                f"saved {world.tutorial_state()!r}")
+
+        elif rtype == P.RT.ENCOUNTER_TUTORIAL_COMPLETE:
+            f = pb.decode(msg)
+            pokemon_id = pb.get(f, 1, pb.WT_VARINT) or 0
+            r = P.build_encounter_tutorial_complete_response(pokemon_id)
+            returns.append(r)
+            st = pb.get(pb.decode(r), 1, pb.WT_VARINT)
+            log(f"      -> ENCOUNTER_TUTORIAL_COMPLETE pokemon=#{pokemon_id} -> "
+                + ("starter awarded; onboarding complete" if st == 1
+                   else f"failed (status {st})"))
+
         elif rtype == P.RT.GET_HATCHED_EGGS:
             import world
             for h in world.check_hatches(P.hatch_species):
