@@ -9,6 +9,18 @@
 
 <a href="https://chucny.github.io"><strong>The ChucnyServer website</strong></a>
 
+
+## 📝 Features
+* **World Manager**: Manage spawns, PokeStops, gyms, events, and more.
+* **Community Day & Events**: Play different community days.
+* **Gym Battles**: Battle Pokémon in gyms!
+* **Automatic PokeStop Import**: Import up to 10,000 PokeStops at once via the OSM API!
+* **Terminal Manager**: An alternative to the graphical World Manager served at `localhost:8080`. It is still in beta and contains bugs.
+* **PokeStop loot customization**: Customize PokeStop loot and items!
+* **Masterballs and beta items**: ChucnyServer gives you access to beta items!
+* **MariaDB**: Sync the whole database to MariaDB!
+* **APK patcher**: Patch any APK to remove SSL pinning!
+
 ## 🖥️ How to Run
 1. Run the **DOWNLOAD.py** script inside `/scripts`. Alternatively, download the dependencies manually (recommended).
 2. Get the assets **(DM @chucny on Discord to get them if you don't have them)**.
@@ -102,14 +114,7 @@ Note: MariaDB isn't needed, the server will save everything in <code>json</code>
 3. Run the MariaDB database
 4. Run <code>database.py</code> and type <code>/help</code> for help with commands
 
-## 📝 Features
-* **World Manager**: Manage spawns, PokeStops, gyms, events, and more.
-* **Raids**: Defeat a powerful boss at a gym. Once defeated, it spawns next to the gym for you to catch.
-* **Community Day & Events**: Play different community days.
-* **Gym Battles**: Battle Pokémon in gyms!
-* **Automatic PokeStop Import**: Import up to 10,000 PokeStops at once via the OSM API!
-* **Terminal Manager**: An alternative to the graphical World Manager served at `localhost:8080`. It is still in beta and contains bugs.
-
+  
 ## 🗄️ How to Get Assets
 1. Send a friend request to me at **@chucny** on Discord if you do not have the assets.
 2. I will respond within a couple of hours to days and provide you with a download link to the assets.
