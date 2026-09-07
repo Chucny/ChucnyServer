@@ -20,6 +20,7 @@
 * **Masterballs and beta items**: ChucnyServer gives you access to beta items!
 * **MariaDB**: Sync the whole database to MariaDB!
 * **APK patcher**: Patch any APK to remove SSL pinning!
+* **Certificate Generator**: Generate your own CA certificates with `generate_certificates.py` in the `/chucnyserver` folder
 
 ## 🖥️ How to Run
 1. Run the **DOWNLOAD.py** script inside `/scripts`. Alternatively, download the dependencies manually (recommended).
