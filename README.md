@@ -1,11 +1,24 @@
-# ChucnyServer
+<div>
+  <h1>ChucnyServer</h1>
+  <p>
+    <a href="https://python.org">
+      <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+    </a>
+    <a href="https://go.dev">
+      <img src="https://img.shields.io/badge/Go-00ADD8?style=for-the-badge&logo=go&logoColor=white" alt="Go">
+    </a>
+    <a href="https://protobuf.dev">
+      <img src="https://img.shields.io/badge/Protocol%20Buffers-85B5D9?style=for-the-badge&logo=protobuf&logoColor=white" alt="Protocol Buffers">
+    </a>
+  </p>
+</div>
 
 
 <img src="screenshots/03_SCROT" style="width: 200px;"></img>
 <img src="screenshots/02_SCROT" style="width: 200px;"></img>
 <img src="screenshots/01_SCROT.png" style="width: 350px;"></img>
 ## 📁 Overview
-**ChucnyServer** is an open source **MITM** (man in the middle) **0.29.0 Pokemon GO server** made in Python.
+**ChucnyServer** is an open source **MITM** (man in the middle) **0.29.0 Pokemon GO server** made in Python. (protocol buffers will be coded in Go later to process faster speeds)
 
 <a href="https://chucny.github.io"><strong>The ChucnyServer website</strong></a>
 
