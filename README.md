@@ -31,6 +31,7 @@
 * **Terminal Manager**: An alternative to the graphical World Manager served at `localhost:8080`. It is still in beta and contains bugs.
 * **PokeStop loot customization**: Customize PokeStop loot and items!
 * **Masterballs and beta items**: ChucnyServer gives you access to beta items!
+* **Onborading, character customization and tutorial**: Go through the full onboarding, catching your starter and selecting your style!
 * **MariaDB**: Sync the whole database to MariaDB!
 * **APK patcher**: Patch any APK to remove SSL pinning!
 * **Certificate Generator**: Generate your own CA certificates with `generate_certificates.py` in the `/chucnyserver` folder
