@@ -9,7 +9,7 @@ RESPONSE builders below depend on these numbers being right.
 """
 
 
-# 6.3.2
+# 6.5.6
 
 import os
 import time
@@ -1308,10 +1308,16 @@ def build_nearby_pokemon(pokemon_id, distance_m, encounter_id=None) -> bytes:
     # The "nearby tracker" (bottom-right of the map). It draws from 2D icons bundled
     # in the APK, so it shows up even when a 3D model bundle doesn't load.
     # POGOServer omits encounter_id here, so it's optional for us too.
-    w = pb.Writer().uint(1, pokemon_id).float_(2, float(distance_m))
-    if encounter_id is not None:
-        w.fixed64(3, encounter_id)
-    return w.to_bytes()
+    # The 0.29 client uses encounter_id to distinguish nearby sightings.
+    # Leaving field 3 absent makes every sighting decode with the same default
+    # value (0), so the radar collapses the list to a single Pokemon.
+    if encounter_id is None:
+        raise ValueError("nearby Pokemon requires a real encounter_id")
+    return (pb.Writer()
+            .uint(1, int(pokemon_id))
+            .float_(2, float(distance_m))
+            .fixed64(3, int(encounter_id) & ((1 << 64) - 1))
+            .to_bytes())
 
 
 def build_spawn_point(lat, lng) -> bytes:
@@ -2077,9 +2083,44 @@ def build_attack_gym_response(gym_id, battle_id, actions, now_ms, last_seen=0) -
                                                  hp_max=b.get("atk_max")))
                 .to_bytes())
 
-    dmg_atk = _cfg.get("battles", "attack_damage", cast=int)
-    dmg_special = _cfg.get("battles", "special_damage", cast=int)
-    dmg_back = _cfg.get("battles", "defender_damage", cast=int)
+    # Never let a missing/zero config value turn combat into a no-damage fight.
+    # Prefer the configured values when they are positive; otherwise use the
+    # actual move power from gamedata, with small safe fallbacks.
+    def _damage_for(move_id, configured, fallback):
+        try:
+            value = int(configured)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+        if _gd is not None:
+            try:
+                move = _gd.MOVES.get(move_id)
+                power = int(move[4]) if move and len(move) > 4 else 0
+                if power > 0:
+                    return power
+            except (TypeError, ValueError, IndexError):
+                pass
+        return max(1, int(fallback))
+
+    atk_quick, atk_charged = moves_for(b["atk_pid"], b["attacker"])
+    def_quick, _dc = moves_for(b["def_pid"], b["defender"])
+
+    dmg_atk = _damage_for(
+        atk_quick,
+        _cfg.get("battles", "attack_damage", cast=int),
+        10,
+    )
+    dmg_special = _damage_for(
+        atk_charged,
+        _cfg.get("battles", "special_damage", cast=int),
+        20,
+    )
+    dmg_back = _damage_for(
+        def_quick,
+        _cfg.get("battles", "defender_damage", cast=int),
+        8,
+    )
 
     log_actions = []
     # The client SCHEDULES every action we return at its ActionStartMs, on its own
@@ -2092,9 +2133,6 @@ def build_attack_gym_response(gym_id, battle_id, actions, now_ms, last_seen=0) -
     # Which moves the two sides are actually using. The client resolves an action
     # to an animation via the performer's moveset, so every action we emit has to
     # carry that move's real duration and damage window.
-    atk_quick, atk_charged = moves_for(b["atk_pid"], b["attacker"])
-    def_quick, _dc = moves_for(b["def_pid"], b["defender"])
-
     cursor = max(now_ms, int(last_seen) + 1, int(b.get("last_emit", 0)) + 1)
     tail = None          # end of the last action we echoed, on the CLIENT's clock
     for a in actions:
@@ -2834,7 +2872,7 @@ def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
                 catch.append(build_map_pokemon(sid, eid, pid, jl, jn, expire))
                 _world.remember_spawn(eid, pid, jl, jn, _cp, sid, expire)
                 spawns.append(build_spawn_point(jl, jn))
-                nearby.append(build_nearby_pokemon(pid, 120.0))
+                nearby.append(build_nearby_pokemon(pid, 120.0, eid))
                 wild_n += 1
         if cid == player_cell and _proc_spawns:
             # a cluster of wild Pokemon right around the trainer (spread within ~65m)
@@ -2865,7 +2903,7 @@ def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
                 catch.append(build_map_pokemon(sid2, eid2, pid2, dlat, dlng, expire))
                 _world.remember_spawn(eid2, pid2, dlat, dlng, _cp2, sid2, expire)
                 spawns.append(build_spawn_point(dlat, dlng))
-                nearby.append(build_nearby_pokemon(pid2, 10.0 + k * 5))
+                nearby.append(build_nearby_pokemon(pid2, 10.0 + k * 5, eid2))
         if _proc_forts and forts_n < MAX_FORTS:
             forts = l17_forts(cid, now)[:max(0, MAX_FORTS - forts_n)]
             forts_n += len(forts)
@@ -2905,7 +2943,7 @@ def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
             catch.append(build_map_pokemon(_sid, _eid, _pid, _s["lat"], _s["lng"], expire))
             _world.remember_spawn(_eid, _pid, _s["lat"], _s["lng"], _pcp, _sid, expire)
             spawns.append(build_spawn_point(_s["lat"], _s["lng"]))
-            nearby.append(build_nearby_pokemon(_pid, 20.0))
+            nearby.append(build_nearby_pokemon(_pid, 20.0, _eid))
 
         # Incense: more wild Pokemon around the trainer while it burns.
         if cid == player_cell and _proc_spawns and _world.item_active(401):
@@ -2928,7 +2966,7 @@ def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
                 catch.append(build_map_pokemon(sid, eid, pid, dl, dn, expire))
                 _world.remember_spawn(eid, pid, dl, dn, cp, sid, expire)
                 spawns.append(build_spawn_point(dl, dn))
-                nearby.append(build_nearby_pokemon(pid, 15.0))
+                nearby.append(build_nearby_pokemon(pid, 15.0, eid))
 
         # Lures: extra Pokemon clustered on any lured stop in this cell.
         if _proc_spawns:
@@ -2956,7 +2994,7 @@ def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
                     catch.append(build_map_pokemon(sid, eid, pid, dl, dn, expire))
                     _world.remember_spawn(eid, pid, dl, dn, cp, sid, expire)
                     spawns.append(build_spawn_point(dl, dn))
-                    nearby.append(build_nearby_pokemon(pid, 12.0))
+                    nearby.append(build_nearby_pokemon(pid, 12.0, eid))
 
         # A defeated raid boss waiting at the trainer's feet (their cell only).
         if cid == player_cell:
@@ -2973,7 +3011,7 @@ def build_get_map_objects_response(cell_ids, lat, lng) -> bytes:
                 _world.remember_spawn(_b["eid"], _b["pid"], _b["lat"], _b["lng"],
                                       _b["cp"], _bsid, _b["expires_ms"])
                 spawns.append(build_spawn_point(_b["lat"], _b["lng"]))
-                nearby.append(build_nearby_pokemon(_b["pid"], 5.0))
+                nearby.append(build_nearby_pokemon(_b["pid"], 5.0, _b["eid"]))
 
         spawned += len(wild)
         w.message(1, build_map_cell(cid, now, catch, forts, wild,
@@ -3053,7 +3091,7 @@ def build_download_settings_response() -> bytes:
                      .to_bytes())
     map_settings = (pb.Writer()
                     .double(1, 70.00196078431372)       # pokemon_visible_range
-                    .double(2, 751.0156862745098)       # poke_nav_range_meters
+                    .double(2, 201.0)                  # poke_nav_range_meters / sightings range
                     .double(3, 50.25098039215686)       # encounter_range_meters
                     .float_(4, 10.007843017578125)      # get_map_objects_min_refresh_seconds
                     .float_(5, 11.01568603515625)       # get_map_objects_max_refresh_seconds
