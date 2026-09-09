@@ -234,45 +234,84 @@ def build_get_player_response(username: str) -> bytes:
 #  Item{item_id=1, count=2, unseen=3}   PlayerStats{level=1, xp=2, prev=3, next=4})
 # Returning a real (non-empty) inventory clears the client's perpetual "syncing"
 # spinner, which otherwise suppresses the live map (Pokemon/PokeStops).
+# NEW! HUGE ITEM UPDATE!
+
 ITEM_POKE_BALL = 1
 ITEM_GREAT_BALL = 2
-ITEM_POTION = 101
-ITEM_REVIVE = 201
 ITEM_ULTRA_BALL = 3
-ITEM_RAZZ_BERRY = 701
 ITEM_MASTER_BALL = 4
 
-# new! two new items added
+# Medicine
+ITEM_POTION = 101
+ITEM_SUPER_POTION = 102
+ITEM_HYPER_POTION = 103
+ITEM_MAX_POTION = 104
+ITEM_REVIVE = 201
+ITEM_MAX_REVIVE = 202
+
+# Boosters & Spawns
 ITEM_LUCKY_EGG = 301
 ITEM_INCENSE_ORDINARY = 401
-
-# Berries
-ITEM_NANAB_BERRY = 703
-ITEM_WEPAR_BERRY = 704
-ITEM_PINAP_BERRY = 705
+ITEM_INCENSE_SPICY = 402
+ITEM_INCENSE_COOL = 403
+ITEM_INCENSE_FLORAL = 404
 
 # Lures
 ITEM_TROY_DISK = 501
 
+# Berries
+ITEM_RAZZ_BERRY = 701
+ITEM_BLUK_BERRY = 702
+ITEM_NANAB_BERRY = 703
+ITEM_WEPAR_BERRY = 704
+ITEM_PINAP_BERRY = 705
+
+# Key Items & Incubators
+ITEM_SPECIAL_CAMERA = 801
+ITEM_INCUBATOR_BASIC_UNLIMITED = 901
+ITEM_INCUBATOR_BASIC = 902
+
+
+
+
+
+
+
 
 unreleased_items = [ITEM_NANAB_BERRY, ITEM_WEPAR_BERRY, ITEM_PINAP_BERRY, ITEM_MASTER_BALL, 801, 1001, 1002] # 801 is the camera, and 1001 and 1002 are storage&item bag upgrades!
 
-
 LOOT_TABLE = {
-    ITEM_POKE_BALL:        {"name": "Poke Ball",    "chance": 100, "min": 1, "max": 3},
-    ITEM_GREAT_BALL:       {"name": "Great Ball",   "chance": 25,  "min": 1, "max": 2},
-    ITEM_ULTRA_BALL:       {"name": "Ultra Ball",   "chance": 10,  "min": 1, "max": 1},
-    ITEM_MASTER_BALL:      {"name": "Master Ball",  "chance": 0,   "min": 1, "max": 1},
-    ITEM_POTION:           {"name": "Potion",       "chance": 100, "min": 1, "max": 2},
-    ITEM_REVIVE:           {"name": "Revive",       "chance": 100, "min": 1, "max": 1},
-    ITEM_RAZZ_BERRY:       {"name": "Razz Berry",   "chance": 20,  "min": 1, "max": 2},
-    ITEM_NANAB_BERRY:      {"name": "Nanab Berry",  "chance": 0,   "min": 1, "max": 2},
-    ITEM_WEPAR_BERRY:      {"name": "Wepear Berry", "chance": 0,   "min": 1, "max": 2},
-    ITEM_PINAP_BERRY:      {"name": "Pinap Berry",  "chance": 0,   "min": 1, "max": 2},
-    ITEM_LUCKY_EGG:        {"name": "Lucky Egg",    "chance": 5,   "min": 1, "max": 1},
-    ITEM_INCENSE_ORDINARY: {"name": "Incense",      "chance": 5,   "min": 1, "max": 1},
-    ITEM_TROY_DISK:        {"name": "Lure Module",  "chance": 4,   "min": 1, "max": 1},
+    ITEM_POKE_BALL:                 {"name": "Poke Ball",        "chance": 100, "min": 1, "max": 3},
+    ITEM_GREAT_BALL:                {"name": "Great Ball",       "chance": 25,  "min": 1, "max": 2},
+    ITEM_ULTRA_BALL:                {"name": "Ultra Ball",       "chance": 10,  "min": 1, "max": 1},
+    ITEM_MASTER_BALL:               {"name": "Master Ball",      "chance": 0,   "min": 1, "max": 1},
+    
+    ITEM_POTION:                    {"name": "Potion",           "chance": 100, "min": 1, "max": 2},
+    ITEM_SUPER_POTION:              {"name": "Super Potion",     "chance": 40,  "min": 1, "max": 2},
+    ITEM_HYPER_POTION:              {"name": "Hyper Potion",     "chance": 15,  "min": 1, "max": 1},
+    ITEM_MAX_POTION:                {"name": "Max Potion",       "chance": 5,   "min": 1, "max": 1},
+    
+    ITEM_REVIVE:                    {"name": "Revive",           "chance": 100, "min": 1, "max": 1},
+    ITEM_MAX_REVIVE:                {"name": "Max Revive",       "chance": 5,   "min": 1, "max": 1},
+    
+    ITEM_RAZZ_BERRY:                {"name": "Razz Berry",       "chance": 20,  "min": 1, "max": 2},
+    ITEM_BLUK_BERRY:                {"name": "Bluk Berry",       "chance": 0,   "min": 1, "max": 2},
+    ITEM_NANAB_BERRY:               {"name": "Nanab Berry",      "chance": 0,   "min": 1, "max": 2},
+    ITEM_WEPAR_BERRY:               {"name": "Wepear Berry",     "chance": 0,   "min": 1, "max": 2},
+    ITEM_PINAP_BERRY:               {"name": "Pinap Berry",      "chance": 0,   "min": 1, "max": 2},
+    
+    ITEM_LUCKY_EGG:                 {"name": "Lucky Egg",        "chance": 5,   "min": 1, "max": 1},
+    
+    ITEM_INCENSE_ORDINARY:          {"name": "Incense",          "chance": 5,   "min": 1, "max": 1},
+    
+    ITEM_TROY_DISK:                 {"name": "Lure Module",      "chance": 4,   "min": 1, "max": 1},
+    
+    ITEM_SPECIAL_CAMERA:            {"name": "Camera",           "chance": 0,   "min": 1, "max": 1},
+    
+    ITEM_INCUBATOR_BASIC_UNLIMITED: {"name": "Egg Incubator ∞",  "chance": 0,   "min": 1, "max": 1},
+    ITEM_INCUBATOR_BASIC:           {"name": "Egg Incubator",    "chance": 2,   "min": 1, "max": 1},
 }
+
 
 
 LOOT_MIN_ITEMS = 3
@@ -1265,6 +1304,71 @@ def build_use_item_revive_response(item_id, uid) -> bytes:
     return pb.Writer().uint(1, 1).int_(2, hp).to_bytes()
 
 
+# Standard height (m) / weight (kg) for each Kanto species (National Dex
+# 1-151), from the official Pokedex entries. build_pokemon_data used to send
+# the same fixed 0.6m / 8.0kg (Charmander's own stock numbers) for literally
+# every species, so a Snorlax and a Diglett looked identically sized to the
+# client.
+HEIGHT_WEIGHT = {
+    1: (0.7, 6.9), 2: (1.0, 13.0), 3: (2.0, 100.0), 4: (0.6, 8.5),
+    5: (1.1, 19.0), 6: (1.7, 90.5), 7: (0.5, 9.0), 8: (1.0, 22.5),
+    9: (1.6, 85.5), 10: (0.3, 2.9), 11: (0.7, 9.9), 12: (1.1, 32.0),
+    13: (0.3, 3.2), 14: (0.6, 10.0), 15: (1.0, 29.5), 16: (0.3, 1.8),
+    17: (1.1, 30.0), 18: (1.5, 39.5), 19: (0.3, 3.5), 20: (0.7, 18.5),
+    21: (0.3, 2.0), 22: (1.2, 38.0), 23: (2.0, 6.9), 24: (3.5, 65.0),
+    25: (0.4, 6.0), 26: (0.8, 30.0), 27: (0.6, 12.0), 28: (1.0, 29.5),
+    29: (0.4, 7.0), 30: (0.8, 20.0), 31: (1.3, 60.0), 32: (0.5, 9.0),
+    33: (0.9, 19.5), 34: (1.4, 62.0), 35: (0.6, 7.5), 36: (1.3, 40.0),
+    37: (0.6, 9.9), 38: (1.1, 19.9), 39: (0.5, 5.5), 40: (1.0, 12.0),
+    41: (0.8, 7.5), 42: (1.6, 55.0), 43: (0.5, 5.4), 44: (0.8, 8.6),
+    45: (1.2, 18.6), 46: (0.3, 5.4), 47: (1.0, 29.5), 48: (1.0, 30.0),
+    49: (1.5, 12.5), 50: (0.2, 0.8), 51: (0.7, 33.3), 52: (0.4, 4.2),
+    53: (1.0, 32.0), 54: (0.8, 19.6), 55: (1.7, 76.6), 56: (0.5, 28.0),
+    57: (1.0, 32.0), 58: (0.7, 19.0), 59: (1.9, 155.0), 60: (0.6, 12.4),
+    61: (1.0, 20.0), 62: (1.3, 54.0), 63: (0.9, 19.5), 64: (1.3, 56.5),
+    65: (1.5, 48.0), 66: (0.8, 19.5), 67: (1.5, 70.5), 68: (1.6, 130.0),
+    69: (0.7, 4.0), 70: (1.0, 6.4), 71: (1.7, 15.5), 72: (0.9, 45.5),
+    73: (1.6, 55.0), 74: (0.4, 20.0), 75: (1.0, 105.0), 76: (1.4, 300.0),
+    77: (1.0, 30.0), 78: (1.7, 95.0), 79: (1.2, 36.0), 80: (1.6, 78.5),
+    81: (0.3, 6.0), 82: (1.0, 60.0), 83: (0.8, 15.0), 84: (1.4, 39.2),
+    85: (1.8, 85.2), 86: (1.1, 90.0), 87: (1.7, 120.0), 88: (0.9, 30.0),
+    89: (1.2, 30.0), 90: (0.3, 4.0), 91: (1.5, 132.5), 92: (1.3, 0.1),
+    93: (1.6, 0.1), 94: (1.5, 40.5), 95: (8.8, 210.0), 96: (1.0, 32.4),
+    97: (1.6, 75.6), 98: (0.4, 6.5), 99: (1.3, 60.0), 100: (0.5, 10.4),
+    101: (1.2, 66.6), 102: (0.4, 2.5), 103: (2.0, 120.0), 104: (0.4, 6.5),
+    105: (1.0, 45.0), 106: (1.5, 49.8), 107: (1.4, 50.2), 108: (1.2, 65.5),
+    109: (0.6, 1.0), 110: (1.2, 9.5), 111: (1.0, 115.0), 112: (1.9, 120.0),
+    113: (1.1, 34.6), 114: (1.0, 35.0), 115: (2.2, 80.0), 116: (0.4, 8.0),
+    117: (1.2, 25.0), 118: (0.6, 15.0), 119: (1.3, 39.0), 120: (0.8, 34.5),
+    121: (1.1, 80.0), 122: (1.3, 54.5), 123: (1.5, 56.0), 124: (1.4, 40.6),
+    125: (1.1, 30.0), 126: (1.3, 44.5), 127: (1.5, 55.0), 128: (1.4, 88.4),
+    129: (0.9, 10.0), 130: (6.5, 235.0), 131: (2.5, 220.0), 132: (0.3, 4.0),
+    133: (0.3, 6.5), 134: (1.0, 29.0), 135: (0.8, 24.5), 136: (0.9, 25.0),
+    137: (0.8, 36.5), 138: (0.4, 7.5), 139: (1.0, 35.0), 140: (0.5, 11.5),
+    141: (1.3, 40.5), 142: (1.8, 59.0), 143: (2.1, 460.0), 144: (1.7, 55.4),
+    145: (1.6, 52.6), 146: (2.0, 60.0), 147: (1.8, 3.3), 148: (4.0, 16.5),
+    149: (2.2, 210.0), 150: (2.0, 122.0), 151: (0.4, 4.0),
+}
+
+
+def height_weight_for(pokemon_id, uid=None):
+    """(height_m, weight_kg) for a Pokemon.
+
+    Falls back to the old 0.6/8.0 stand-in for anything outside the known
+    Kanto dex (e.g. an out-of-range id someone hand-crafted). When a uid is
+    given, applies the same per-individual size variance the real client
+    shows (each caught Pokemon is randomly XS/S/N/L/XL around the species
+    standard, multiplier 0.5-1.5), deterministically for that uid so it
+    doesn't reshuffle every time the Pokemon is redrawn.
+    """
+    base_h, base_w = HEIGHT_WEIGHT.get(pokemon_id, (0.6, 8.0))
+    if uid is None:
+        return base_h, base_w
+    r = _random.Random(uid ^ 0x4849_5754)  # distinct stream from _ivs()/moves_for()
+    return (round(base_h * r.uniform(0.5, 1.5), 2),
+            round(base_w * r.uniform(0.5, 1.5), 2))
+
+
 def build_pokemon_data(pokemon_id, uid, cp=500, extra=None) -> bytes:
     # PokemonData { id=1 fixed64, pokemon_id=2 enum, cp=3, stamina=4, stamina_max=5,
     #   move_1=6, move_2=7, height_m=15 float, weight_kg=16 float,
@@ -1283,13 +1387,14 @@ def build_pokemon_data(pokemon_id, uid, cp=500, extra=None) -> bytes:
         hp = hp_max if e.get("stamina") is None else max(0, min(int(e["stamina"]), hp_max))
     _m1, _m2 = moves_for(pokemon_id, uid)
     _iv_a, _iv_d, _iv_s = _ivs(uid)
+    _height_m, _weight_kg = height_weight_for(pokemon_id, uid)
     w = (pb.Writer()
          .fixed64(1, uid)
          .uint(2, pokemon_id)
          .int_(3, cp)
          .int_(4, hp).int_(5, max(hp, hp_max))        # stamina / stamina_max
          .uint(6, _m1).uint(7, _m2)                   # move_1 / move_2
-         .float_(15, 0.6).float_(16, 8.0)             # height_m / weight_kg
+         .float_(15, _height_m).float_(16, _weight_kg)  # height_m / weight_kg
          .int_(17, _iv_a)                             # individual_attack
          .int_(18, _iv_d)                             # individual_defense
          .int_(19, _iv_s)                             # individual_stamina
@@ -1482,12 +1587,28 @@ def parse_catch(msg: bytes):
     normalized_reticle_size=3 double, spawn_point_guid=4, hit_pokemon=5,
     spin_modifier=6 double, normalized_hit_position=7 double }.
 
-    Returns (encounter_id, pokeball, hit, reticle, spin)."""
+    Returns (encounter_id, pokeball, hit, reticle, spin).
+
+    normalized_reticle_size is just how tight the ring *was* when released --
+    it says nothing about whether the ball actually landed inside it. That's
+    normalized_hit_position (1.0 = landed in the circle, less than that = the
+    ball missed the circle, even though hit_pokemon can still be true because
+    it hit the Pokemon's body). We were never reading field 7 at all, so a
+    throw with a small reticle but a wide miss of the circle still scored
+    Nice/Great/Excellent off reticle size alone. Folding the check in here --
+    zeroing the reticle value we hand back when the circle wasn't hit -- fixes
+    every downstream consumer (throw_bonus, build_capture_award,
+    build_catch_pokemon_response) without changing this function's signature.
+    """
     f = pb.decode(msg)
+    reticle = _f64_to_double(pb.get(f, 3, pb.WT_64))
+    hit_position = _f64_to_double(pb.get(f, 7, pb.WT_64))
+    if hit_position < 0.999:                      # ball missed the target circle
+        reticle = 0.0                              # -> ordinary throw, no bonus
     return (pb.get(f, 1, pb.WT_64),
             pb.get(f, 2, pb.WT_VARINT) or ITEM_POKE_BALL,
             bool(pb.get(f, 5, pb.WT_VARINT)),
-            _f64_to_double(pb.get(f, 3, pb.WT_64)),
+            reticle,
             _f64_to_double(pb.get(f, 6, pb.WT_64)))
 
 
