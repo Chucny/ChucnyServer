@@ -121,10 +121,10 @@ apk-mitm path/to/pokemon-go-0.29.0.apk
 4. Launch Pokémon GO, select the **"Pokemon Trainer Club"** login option, enter any username/password combination, and enjoy your server!
 ---
 
-## 💾 MariaDB
-Note: MariaDB isn't needed, the server will save everything in <code>json</code> files. This feature still allows you to back up players, pokestops and gyms.
+## 💾 MariaDB & SQLite
+Note: MariaDB isn't needed, the server will save everything in <code>json</code> files. This feature still allows you to back up players, pokestops and gyms. SQLite is also supported.
 **How to use**:
-1. Install MariaDB
+1. Install MariaDB (or for SQLite, create a file called `local_backup.db`
 2. Put the MariaDB port, password, name and username in <code>config.py</code>
 3. Run the MariaDB database
 4. Run <code>database.py</code> and type <code>/help</code> for help with commands
