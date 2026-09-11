@@ -132,13 +132,13 @@ Note: MariaDB isn't needed, the server will save everything in <code>json</code>
   
 ## 🗄️ How to Get Assets
 1. Send a friend request to me at **@chucny** on Discord if you do not have the assets.
-2. I will respond within a couple of hours to days and provide you with a download link to the assets.
+2. I will respond within a couple of hours to days and provide you with different places you can get the assets from (public archives and more).
 3. **Download** the assets.
 4. Paste the 152 asset files directly into the `/chucnyserver/assets` folder.
 5. Run the server.
 
 ## ⚖️ Asset Distribution Disclaimer
-The reason I cannot provide assets publicly is because it violates **Copyright Laws**. Pokémon and its trademarks are the **Intellectual Property (IP)** of **Nintendo and The Pokémon Company**. If this project distributed assets publicly, it would receive a **DMCA takedown**. By leaving assets out of the repository, the project remains completely legal.
+The reason I cannot provide assets publicly is because it violates **Copyright Laws**. Pokémon and its trademarks are the **Intellectual Property (IP)** of **Nintendo and The Pokémon Company**. If this project distributed assets publicly, it would receive a **DMCA takedown**. By leaving assets out of the repository, the project remains completely legal. **The game master is a custom `.bin` file made with a tool that turns text into protouf and not a direct dump from the official game**.
 
 ## 🖼️ Credits
 * **@mobraxton5-ux** for making the playground.
